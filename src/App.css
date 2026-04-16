@@ -1,0 +1,178 @@
+.app-root {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Breadcrumb path bar */
+.breadcrumb {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.82);
+  border-bottom: 1px solid rgba(0,0,0,0.1);
+  font-size: 13px;
+  color: #1a3a5c;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(6px);
+  z-index: 50;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.breadcrumb-seg.clickable {
+  cursor: pointer;
+  opacity: 0.6;
+}
+.breadcrumb-seg.clickable:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+.breadcrumb-seg.current {
+  font-weight: 700;
+  color: #0055cc;
+}
+.breadcrumb-sep {
+  color: #aaaaaa;
+  margin: 0 2px;
+}
+.breadcrumb-hint {
+  color: #aaaaaa;
+  font-size: 11px;
+  margin-left: 14px;
+  font-weight: 400;
+}
+
+/* Hint shown when terminal is closed */
+.hud-hint {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0,0,0,0.15);
+  color: #1a3a5c;
+  padding: 6px 18px;
+  border-radius: 20px;
+  font-size: 13px;
+  pointer-events: none;
+  letter-spacing: 0.03em;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+
+.hud-hint kbd {
+  background: #e8f0ff;
+  border: 1px solid #aabbdd;
+  border-radius: 4px;
+  padding: 1px 7px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #1a3a5c;
+}
+
+/* Terminal overlay */
+.terminal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 10, 30, 0.5);
+  z-index: 100;
+  backdrop-filter: blur(4px);
+}
+
+.terminal-window {
+  width: min(680px, 92vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(10, 14, 30, 0.97);
+  border: 1px solid rgba(100, 180, 255, 0.25);
+  border-radius: 10px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.terminal-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 14px;
+  background: rgba(255,255,255,0.05);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  font-size: 12px;
+  color: rgba(255,255,255,0.6);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.terminal-close {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.4);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.terminal-close:hover {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+}
+
+.terminal-output {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.1) transparent;
+}
+
+.terminal-line {
+  margin-bottom: 3px;
+  line-height: 1.55;
+}
+
+.terminal-line pre {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.terminal-system pre { color: rgba(255,255,255,0.35); }
+.terminal-input  pre { color: #7dd3fc; }
+.terminal-output pre { color: #d1fae5; }
+
+.terminal-input-row {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  gap: 6px;
+}
+
+.terminal-prompt {
+  color: #7dd3fc;
+  font-size: 13px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-family: 'Courier New', monospace;
+}
+
+.terminal-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #ffffff;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  caret-color: #7dd3fc;
+}
