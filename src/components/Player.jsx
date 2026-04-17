@@ -3,7 +3,9 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { usePlayerStore } from '../store/playerStore'
 
-const SPEED = 6
+const SPEED    = 9    // world-units per second — edit here and save to change
+const BOB_AMP  = 0.10  // walk-bob amplitude in world units
+const BOB_FREQ = 8.0   // bob oscillations per second
 
 // Isometric movement axes for camera at [1,1,1] looking at [0,0,0]:
 // W = screen-up   → world (-1, 0, -1) normalized
@@ -17,7 +19,8 @@ const DIR = {
   d: new THREE.Vector3( 1, 0, -1).normalize(),
 }
 
-const keys = { w: false, a: false, s: false, d: false }
+const keys  = { w: false, a: false, s: false, d: false }
+const _move = new THREE.Vector3()  // reused every frame to avoid GC pressure
 
 export default function Player() {
   const meshRef = useRef()
@@ -26,7 +29,8 @@ export default function Player() {
 
   useEffect(() => {
     function onKeyDown(e) {
-      if (document.querySelector('.terminal-overlay')) return
+      // Block movement when the terminal input (or any sidebar element) has focus
+      if (document.activeElement?.closest('.sidebar')) return
       const k = e.key.toLowerCase()
       if (k in keys) keys[k] = true
     }
@@ -43,24 +47,35 @@ export default function Player() {
   }, [])
 
   useFrame((_, delta) => {
-    const move = new THREE.Vector3()
-    if (keys.w) move.add(DIR.w)
-    if (keys.s) move.add(DIR.s)
-    if (keys.a) move.add(DIR.a)
-    if (keys.d) move.add(DIR.d)
+    // Consume teleport signal from store (written by cd transition)
+    const storeState = usePlayerStore.getState()
+    if (storeState.pendingTeleport) {
+      const { x, z } = storeState.pendingTeleport
+      posRef.current.set(x, 0, z)
+      storeState.clearTeleport()
+    }
 
-    if (move.lengthSq() > 0) {
-      move.normalize().multiplyScalar(SPEED * delta)
-      posRef.current.add(move)
+    _move.set(0, 0, 0)
+    if (keys.w) _move.add(DIR.w)
+    if (keys.s) _move.add(DIR.s)
+    if (keys.a) _move.add(DIR.a)
+    if (keys.d) _move.add(DIR.d)
+
+    if (_move.lengthSq() > 0) {
+      _move.normalize().multiplyScalar(SPEED * delta)
+      posRef.current.add(_move)
     }
 
     if (meshRef.current) {
-      meshRef.current.position.copy(posRef.current)
+      const isMoving = _move.lengthSq() > 0
+      // Walk bob: gentle sine bounce while moving, smoothly settles to 0 at rest
+      const bobY = isMoving
+        ? Math.abs(Math.sin(performance.now() / 1000 * BOB_FREQ)) * BOB_AMP
+        : 0
+      meshRef.current.position.set(posRef.current.x, bobY, posRef.current.z)
 
-      // Rotate character to face movement direction (around Y axis)
-      if (move.lengthSq() > 0) {
-        const angle = Math.atan2(move.x, move.z)
-        meshRef.current.rotation.y = angle
+      if (isMoving) {
+        meshRef.current.rotation.y = Math.atan2(_move.x, _move.z)
       }
     }
 

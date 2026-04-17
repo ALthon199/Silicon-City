@@ -23,6 +23,9 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { CITY_HALF, WALL_H, PARK_LOTS } from '../engine/gridLayout'
 
+const _dummy = new THREE.Object3D()
+const TAU    = Math.PI * 2
+
 const H      = CITY_HALF  // 30
 const noRay  = () => null
 
@@ -56,6 +59,12 @@ const mat = {
   plazaAcc:  new THREE.MeshLambertMaterial({ color: '#e8dfc8' }),
   plazaDark: new THREE.MeshLambertMaterial({ color: '#a89880' }),
   waterGlow: new THREE.MeshLambertMaterial({ color: '#50c4f8', emissive: new THREE.Color('#0088cc').multiplyScalar(0.55), transparent: true, opacity: 0.90 }),
+  droplet:   new THREE.MeshBasicMaterial({ color: '#88ddff', transparent: true, opacity: 0.82 }),
+  // Street furniture
+  lampPost:  new THREE.MeshLambertMaterial({ color: '#1e1e2a' }),
+  lamp:      new THREE.MeshBasicMaterial({ color: '#fff8c0' }),
+  trunk:     new THREE.MeshLambertMaterial({ color: '#8b6914' }),
+  planter:   new THREE.MeshLambertMaterial({ color: '#a89880' }),
 }
 
 // ─── Generic box helper ───────────────────────────────────────────────────────
@@ -196,10 +205,31 @@ function ParkLot({ x, z, variant = 0 }) {
 // 8×8 grand plaza base sits at city center (0, 0).
 // Park lot inner edges are at ±5, fountain plaza edges at ±4 — 1-unit gap, no overlap.
 // Three-basin tower rises ~5.7 units. Crown rotates; water surfaces glow blue.
+const NDROP  = 6
+const DROP_R = 0.72   // orbit radius around spire
+const DROP_Y = 4.60   // base orbit height above fountain floor
+
 function CentralFountain() {
   const crownRef = useRef()
+  const dropsRef = useRef()
+
   useFrame((_, delta) => {
+    const t = performance.now() / 1000
+
     if (crownRef.current) crownRef.current.rotation.y += delta * 0.22
+
+    // Orbit 6 glowing water droplets around the spire
+    if (dropsRef.current) {
+      for (let i = 0; i < NDROP; i++) {
+        const angle = t * 1.1 + (i * TAU) / NDROP
+        const bobY  = Math.sin(t * 2.8 + (i * TAU) / NDROP) * 0.28
+        _dummy.position.set(Math.cos(angle) * DROP_R, DROP_Y + bobY, Math.sin(angle) * DROP_R)
+        _dummy.scale.setScalar(0.6 + 0.4 * Math.abs(Math.sin(t * 1.5 + i)))
+        _dummy.updateMatrix()
+        dropsRef.current.setMatrixAt(i, _dummy.matrix)
+      }
+      dropsRef.current.instanceMatrix.needsUpdate = true
+    }
   })
 
   return (
@@ -266,6 +296,12 @@ function CentralFountain() {
         <Box pos={[0, 0.06,  0.58]} size={[0.10, 0.10, 0.38]} m={mat.plazaAcc} />
         <Box pos={[0, 0.06, -0.58]} size={[0.10, 0.10, 0.38]} m={mat.plazaAcc} />
       </group>
+
+      {/* ── Orbiting water droplets ── */}
+      <instancedMesh ref={dropsRef} args={[undefined, undefined, NDROP]} raycast={noRay}>
+        <sphereGeometry args={[0.082, 7, 7]} />
+        <primitive object={mat.droplet} attach="material" />
+      </instancedMesh>
     </group>
   )
 }
@@ -295,6 +331,52 @@ function EntranceApproach() {
     <group position={[0, 0, 27.5]}>
       <Box pos={[0, 0.22, 0]} size={[5.8, 0.12, 3.0]} m={mat.plaza} />
       <Box pos={[0, 0.30, 0]} size={[4.0, 0.06, 2.0]} m={mat.plazaAcc} />
+    </group>
+  )
+}
+
+// ─── Street lamp ──────────────────────────────────────────────────────────────
+// Placed at road intersections throughout the city.
+function StreetLamp({ x, z }) {
+  return (
+    <group position={[x, 0, z]}>
+      {/* Base plinth */}
+      <Box pos={[0, 0.14, 0]} size={[0.28, 0.28, 0.28]} m={mat.lampPost} />
+      {/* Post */}
+      <Box pos={[0, 2.28, 0]} size={[0.12, 4.20, 0.12]} m={mat.lampPost} />
+      {/* Horizontal arm */}
+      <Box pos={[0.46, 4.40, 0]} size={[0.92, 0.10, 0.10]} m={mat.lampPost} />
+      {/* Lamp head housing */}
+      <Box pos={[0.92, 4.28, 0]} size={[0.30, 0.24, 0.30]} m={mat.lampPost} />
+      {/* Lamp glow (MeshBasicMaterial — always bright) */}
+      <Box pos={[0.92, 4.28, 0]} size={[0.20, 0.14, 0.20]} m={mat.lamp} />
+    </group>
+  )
+}
+
+// ─── Road tree ────────────────────────────────────────────────────────────────
+// Layered canopy with tapering silhouette.
+function RoadTree({ x, z }) {
+  return (
+    <group position={[x, 0, z]}>
+      <Box pos={[0, 0.68, 0]} size={[0.26, 1.36, 0.26]} m={mat.trunk} />
+      <Box pos={[0, 1.80, 0]} size={[1.24, 0.72, 1.24]} m={mat.leaf} />
+      <Box pos={[0, 2.34, 0]} size={[0.92, 0.64, 0.92]} m={mat.leaf2} />
+      <Box pos={[0, 2.80, 0]} size={[0.58, 0.52, 0.58]} m={mat.hedge} />
+      <Box pos={[0, 3.12, 0]} size={[0.30, 0.30, 0.30]} m={mat.leaf} />
+    </group>
+  )
+}
+
+// ─── Plaza planter ────────────────────────────────────────────────────────────
+// Small decorative planter box for open road areas near the fountain plaza.
+function PlazaPlanter({ x, z }) {
+  return (
+    <group position={[x, 0, z]}>
+      <Box pos={[0, 0.26, 0]} size={[0.88, 0.52, 0.88]} m={mat.planter} />
+      <Box pos={[0, 0.54, 0]} size={[0.68, 0.08, 0.68]} m={mat.stone} />
+      <Box pos={[0, 0.64, 0]} size={[0.52, 0.20, 0.52]} m={mat.grassDk} />
+      <Box pos={[0, 0.80, 0]} size={[0.28, 0.24, 0.28]} m={mat.leaf2} />
     </group>
   )
 }
@@ -353,25 +435,32 @@ export default function CityBoundary() {
       {/* ── Entrance approach ── */}
       <EntranceApproach />
 
-      {/* ── Corner grass patches ──
-           Outer lot edges now at ±25. Buffer zone ±25 to ±30 (5 units).
-           Patches centered at z=±27.5, x=±28 — midway through the buffer. */}
-      <mesh position={[-28, 0.26, 27.5]} raycast={noRay}>
-        <boxGeometry args={[3.5, 0.20, 4.0]} />
-        <primitive object={mat.grass} attach="material" />
-      </mesh>
-      <mesh position={[ 28, 0.26, 27.5]} raycast={noRay}>
-        <boxGeometry args={[3.5, 0.20, 4.0]} />
-        <primitive object={mat.grass} attach="material" />
-      </mesh>
-      <mesh position={[-28, 0.26, -27.5]} raycast={noRay}>
-        <boxGeometry args={[3.5, 0.20, 4.0]} />
-        <primitive object={mat.grassDk} attach="material" />
-      </mesh>
-      <mesh position={[ 28, 0.26, -27.5]} raycast={noRay}>
-        <boxGeometry args={[3.5, 0.20, 4.0]} />
-        <primitive object={mat.grassDk} attach="material" />
-      </mesh>
+      {/* ── Street lamps at outer-road / inner-road intersections ────────── */}
+      {/* Along outer N-S roads (x=±27) crossing inner E-W roads (z=±15) and centre */}
+      <StreetLamp x={ 27} z={ 15} />
+      <StreetLamp x={ 27} z={-15} />
+      <StreetLamp x={-27} z={ 15} />
+      <StreetLamp x={-27} z={-15} />
+      <StreetLamp x={ 27} z={  0} />
+      <StreetLamp x={-27} z={  0} />
+      {/* Along inner N-S roads (x=±15) crossing outer E-W roads (z=±27) */}
+      <StreetLamp x={ 15} z={ 27} />
+      <StreetLamp x={ 15} z={-27} />
+      <StreetLamp x={-15} z={ 27} />
+      <StreetLamp x={-15} z={-27} />
+
+      {/* ── Trees at outer-road corner intersections (x=±27, z=±27) ───────── */}
+      <RoadTree x={ 27} z={ 27} />
+      <RoadTree x={ 27} z={-27} />
+      <RoadTree x={-27} z={ 27} />
+      <RoadTree x={-27} z={-27} />
+
+      {/* ── Plaza planters flanking the fountain on the E-W axis ─────────── */}
+      {/* Positioned in the road gap between fountain plaza (±4) and park lots (±5) */}
+      <PlazaPlanter x={ 4.5} z={0} />
+      <PlazaPlanter x={-4.5} z={0} />
+      <PlazaPlanter x={0} z={ 4.5} />
+      <PlazaPlanter x={0} z={-4.5} />
     </group>
   )
 }

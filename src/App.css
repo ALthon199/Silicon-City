@@ -1,166 +1,256 @@
+/* ═══════════════════════════════════════════════════════════════
+   Root layout — sidebar left | 3D city right
+   ═══════════════════════════════════════════════════════════════ */
 .app-root {
-  position: relative;
+  display: flex;
+  flex-direction: row;
   width: 100vw;
   height: 100vh;
   overflow: hidden;
 }
 
-/* Breadcrumb path bar */
-.breadcrumb {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.82);
-  border-bottom: 1px solid rgba(0,0,0,0.1);
+/* ═══════════════════════════════════════════════════════════════
+   Left sidebar
+   ═══════════════════════════════════════════════════════════════ */
+.sidebar {
+  width: 300px;
+  min-width: 300px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #07090f;
+  border-right: 1px solid rgba(100, 180, 255, 0.12);
+  font-family: 'Courier New', Courier, monospace;
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+/* ── Header: logo + path ── */
+.sidebar-header {
+  padding: 14px 16px 11px;
+  border-bottom: 1px solid rgba(100, 180, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.sidebar-logo {
   font-size: 13px;
-  color: #1a3a5c;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  backdrop-filter: blur(6px);
-  z-index: 50;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.sidebar-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-top: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  min-height: 16px;
+}
+
+.sidebar-path-seg {
+  color: rgba(255, 255, 255, 0.45);
   white-space: nowrap;
+}
+
+.sidebar-path-link {
+  cursor: pointer;
+  color: rgba(125, 211, 252, 0.6);
+  transition: color 0.15s;
+}
+.sidebar-path-link:hover {
+  color: #7dd3fc;
+}
+
+.sidebar-path-current {
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+}
+
+.sidebar-path-sep {
+  color: rgba(255, 255, 255, 0.2);
+  margin: 0 1px;
+}
+
+/* ── Section chrome ── */
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sidebar-section-label {
+  padding: 8px 16px 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.2);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* ── File tree section ── */
+.sidebar-tree-section {
+  flex: 1;
+  overflow: hidden;
+}
+
+.sidebar-tree-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.07) transparent;
+  height: 100%;
+}
+
+/* ── File tree nodes ── */
+.file-tree {
+  padding: 2px 0 8px;
+}
+
+.tree-dir,
+.tree-file {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px 3px 0;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  user-select: none;
+  border-radius: 3px;
+  margin-right: 6px;
+  line-height: 1.4;
+}
+
+.tree-dir {
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+}
+.tree-dir:hover {
+  background: rgba(100, 180, 255, 0.08);
+  color: #fff;
+}
+
+.tree-dir--active {
+  background: rgba(100, 180, 255, 0.14);
+  color: #7dd3fc;
+  font-weight: 700;
+}
+.tree-dir--active:hover {
+  background: rgba(100, 180, 255, 0.2);
+}
+
+.tree-file {
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.tree-chevron {
+  font-size: 8px;
+  opacity: 0.6;
+  flex-shrink: 0;
+  width: 10px;
+  text-align: center;
+}
+
+.tree-bullet {
+  font-size: 7px;
+  flex-shrink: 0;
+  width: 10px;
+  text-align: center;
+}
+
+.tree-name {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.breadcrumb-seg.clickable {
-  cursor: pointer;
-  opacity: 0.6;
+.tree-size {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+  margin-left: 4px;
 }
-.breadcrumb-seg.clickable:hover {
-  opacity: 1;
-  text-decoration: underline;
+
+.tree-cwd-badge {
+  font-size: 9px;
+  background: rgba(100, 180, 255, 0.2);
+  color: #7dd3fc;
+  border-radius: 3px;
+  padding: 0 5px;
+  margin-left: 4px;
+  flex-shrink: 0;
+  letter-spacing: 0.04em;
 }
-.breadcrumb-seg.current {
-  font-weight: 700;
-  color: #0055cc;
-}
-.breadcrumb-sep {
-  color: #aaaaaa;
-  margin: 0 2px;
-}
-.breadcrumb-hint {
-  color: #aaaaaa;
+
+.tree-empty {
   font-size: 11px;
-  margin-left: 14px;
-  font-weight: 400;
+  color: rgba(255, 255, 255, 0.2);
+  padding: 10px 16px;
+  font-style: italic;
+  font-family: 'Segoe UI', system-ui, sans-serif;
 }
-
-/* Hint shown when terminal is closed */
-.hud-hint {
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(255, 255, 255, 0.85);
-  border: 1px solid rgba(0,0,0,0.15);
-  color: #1a3a5c;
-  padding: 6px 18px;
-  border-radius: 20px;
-  font-size: 13px;
-  pointer-events: none;
-  letter-spacing: 0.03em;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
-}
-
-.hud-hint kbd {
-  background: #e8f0ff;
-  border: 1px solid #aabbdd;
-  border-radius: 4px;
-  padding: 1px 7px;
+.tree-empty code {
   font-family: 'Courier New', monospace;
-  font-size: 12px;
-  color: #1a3a5c;
+  color: rgba(125, 211, 252, 0.5);
 }
 
-/* Terminal overlay */
-.terminal-overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 10, 30, 0.5);
-  z-index: 100;
-  backdrop-filter: blur(4px);
-}
-
-.terminal-window {
-  width: min(680px, 92vw);
-  max-height: 70vh;
+/* ── Terminal section ── */
+.sidebar-terminal-section {
+  height: 260px;
+  min-height: 180px;
   display: flex;
   flex-direction: column;
-  background: rgba(10, 14, 30, 0.97);
-  border: 1px solid rgba(100, 180, 255, 0.25);
-  border-radius: 10px;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
-  overflow: hidden;
-}
-
-.terminal-titlebar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 9px 14px;
-  background: rgba(255,255,255,0.05);
-  border-bottom: 1px solid rgba(255,255,255,0.08);
-  font-size: 12px;
-  color: rgba(255,255,255,0.6);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.terminal-close {
-  background: none;
-  border: none;
-  color: rgba(255,255,255,0.4);
-  cursor: pointer;
-  font-size: 14px;
-  padding: 2px 6px;
-  border-radius: 3px;
-}
-.terminal-close:hover {
-  background: rgba(255,255,255,0.1);
-  color: #fff;
+  flex-shrink: 0;
+  border-top: 1px solid rgba(100, 180, 255, 0.1);
 }
 
 .terminal-output {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 16px;
+  padding: 6px 12px 4px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.1) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+  min-height: 0;
 }
 
 .terminal-line {
-  margin-bottom: 3px;
-  line-height: 1.55;
+  margin-bottom: 2px;
+  line-height: 1.5;
 }
 
 .terminal-line pre {
   font-family: 'Courier New', Courier, monospace;
-  font-size: 13px;
+  font-size: 11px;
   white-space: pre-wrap;
   word-break: break-all;
+  margin: 0;
 }
 
-.terminal-system pre { color: rgba(255,255,255,0.35); }
+.terminal-system pre { color: rgba(255, 255, 255, 0.28); }
 .terminal-input  pre { color: #7dd3fc; }
 .terminal-output pre { color: #d1fae5; }
 
 .terminal-input-row {
   display: flex;
   align-items: center;
-  padding: 10px 16px;
-  border-top: 1px solid rgba(255,255,255,0.07);
+  padding: 7px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
   gap: 6px;
+  flex-shrink: 0;
 }
 
 .terminal-prompt {
   color: #7dd3fc;
-  font-size: 13px;
+  font-size: 11px;
   white-space: nowrap;
   flex-shrink: 0;
   font-family: 'Courier New', monospace;
@@ -173,6 +263,73 @@
   outline: none;
   color: #ffffff;
   font-family: 'Courier New', Courier, monospace;
-  font-size: 13px;
+  font-size: 11px;
   caret-color: #7dd3fc;
+  min-width: 0;
+}
+
+.terminal-input::placeholder {
+  color: rgba(255, 255, 255, 0.15);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   3D city view (right portion)
+   ═══════════════════════════════════════════════════════════════ */
+.city-view {
+  flex: 1;
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Canvas wrapper — portal animation target ── */
+.canvas-wrapper {
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 50%;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Portal journey animation
+   ═══════════════════════════════════════════════════════════════ */
+@keyframes portal-journey {
+  0%   { transform: scale(1);    filter: brightness(1)    saturate(1);   }
+  33%  { transform: scale(6.5);  filter: brightness(2.6)  saturate(1.5); }
+  34%  { transform: scale(0.11); filter: brightness(0.35) saturate(0.4); }
+  42%  { transform: scale(0.11); filter: brightness(0.7)  saturate(0.8); }
+  100% { transform: scale(1);    filter: brightness(1)    saturate(1);   }
+}
+
+.portal-journey {
+  animation: portal-journey 1.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Ring-flash overlay — only covers the city view (position: absolute) */
+@keyframes portal-ring {
+  0%   { opacity: 0; background: white; }
+  30%  { opacity: 0; }
+  34%  { opacity: 1; background: white; }
+  36%  {
+    opacity: 0.7;
+    background: radial-gradient(circle at center,
+      #ffffff 0%, #aaddff 25%, #0055cc 55%, transparent 80%);
+  }
+  55%  { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+.cd-portal-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 190;
+  animation: portal-ring 1.35s ease-out forwards;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Breadcrumb fade-in (used in FileTreePanel path segments)
+   ═══════════════════════════════════════════════════════════════ */
+@keyframes breadcrumb-fade-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
 }

@@ -44,11 +44,11 @@ export const useVfsStore = create((set, get) => ({
     return getNodeAtPath(get().tree, get().cwd)
   },
 
-  // ls — returns names of children in cwd (used by HUD output)
+  // ls — returns children in cwd with full metadata
   ls() {
     const node = get().getCwdNode()
     if (!node || node.type !== 'dir') return []
-    return node.children.map(c => ({ name: c.name, type: c.type, size: c.size }))
+    return node.children.map(c => ({ name: c.name, type: c.type, size: c.size, ext: c.ext }))
   },
 
   // mkdir — add a directory child to cwd
@@ -108,6 +108,38 @@ export const useVfsStore = create((set, get) => ({
       if (!parent || parent.type !== 'dir') return {}
       const removed = removeChild(parent, name)
       if (!removed) return {}
+      return { tree: { ...state.tree } }
+    })
+  },
+
+  // mv — rename a child within cwd (simple rename; no cross-dir move)
+  mv(src, dest) {
+    set(state => {
+      const parent = getNodeAtPath(state.tree, state.cwd)
+      if (!parent || parent.type !== 'dir') return {}
+      const idx = parent.children.findIndex(c => c.name === src)
+      if (idx === -1) return {}
+      if (parent.children.find(c => c.name === dest)) return {} // dest already exists
+      const node = parent.children[idx]
+      const ext  = dest.includes('.') ? dest.split('.').pop() : node.ext ?? ''
+      parent.children[idx] = { ...node, name: dest, ext }
+      return { tree: { ...state.tree } }
+    })
+  },
+
+  // cp — shallow-copy a child within cwd (dirs copy without deep children)
+  cp(src, dest) {
+    set(state => {
+      const parent = getNodeAtPath(state.tree, state.cwd)
+      if (!parent || parent.type !== 'dir') return {}
+      const node = parent.children.find(c => c.name === src)
+      if (!node) return {}
+      if (parent.children.find(c => c.name === dest)) return {}
+      const ext  = dest.includes('.') ? dest.split('.').pop() : node.ext ?? ''
+      const copy = node.type === 'file'
+        ? { ...node, name: dest, ext }
+        : { ...node, name: dest, children: [] }   // dirs copy empty
+      parent.children.push(copy)
       return { tree: { ...state.tree } }
     })
   },

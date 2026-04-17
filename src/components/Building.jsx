@@ -10,6 +10,29 @@ import { useFrame } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
 import * as THREE from 'three'
 
+// Shared scratch color — safe because JS is single-threaded (useFrame runs sequentially)
+const _winColor  = new THREE.Color()
+const _winDark   = new THREE.Color('#221100')
+const _winBright = new THREE.Color('#ffaa44')
+
+// ── Deterministic hash (DJB2) for rooftop variety ─────────────────────────────
+function nameHash(str) {
+  let h = 5381
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0
+  return h
+}
+
+// ── Module-level shared materials for rooftop details ─────────────────────────
+const antennaMat   = new THREE.MeshLambertMaterial({ color: '#252525' })
+const waterTankMat = new THREE.MeshLambertMaterial({ color: '#7a5a3a' })
+const gardenMats   = [
+  new THREE.MeshLambertMaterial({ color: '#2a8a1a' }),
+  new THREE.MeshLambertMaterial({ color: '#33a020' }),
+  new THREE.MeshLambertMaterial({ color: '#1e7a14' }),
+]
+const shrubMatA    = new THREE.MeshLambertMaterial({ color: '#2d7a1f' })
+const shrubMatB    = new THREE.MeshLambertMaterial({ color: '#3a9427' })
+
 // Lot slab top surface sits at this Y — buildings start here
 const SLAB_TOP = 0.08 + 0.28  // asphalt y + slab height
 
@@ -73,11 +96,19 @@ function beltYPositions(height) {
   return positions
 }
 
-export default function Building({ name, ext, size, x, z, showLabel }) {
+function dispatchInspect(name, ext, size) {
+  window.dispatchEvent(new CustomEvent('vfs-inspect', { detail: { name, ext, size } }))
+}
+
+export default function Building({ name, ext, size, x, z, showLabel, startDelay = 0 }) {
   const groupRef = useRef()
   const labelRef = useRef()
   const scaleProgress = useRef(0)
   const animDone = useRef(false)
+  const hovered = useRef(false)
+  const hoverY = useRef(0)
+  const startAt = useRef(performance.now() + startDelay)
+  const frameSkip = useRef(0)   // for window-flicker throttle
 
   const style = getStyle(ext)
   const { w, d, height } = useMemo(() => calcDimensions(size, ext), [size, ext])
@@ -95,11 +126,44 @@ export default function Building({ name, ext, size, x, z, showLabel }) {
   const hasHVAC = size > 5000
   const roofY   = isStepped ? lowerH + upperH : height
 
-  const bodyMat = useMemo(() => new THREE.MeshLambertMaterial({ color: style.body }), [style.body])
-  const roofMat = useMemo(() => new THREE.MeshLambertMaterial({ color: style.roof }), [style.roof])
+  // Deterministic rooftop details — stable per file name
+  const roofDetails = useMemo(() => {
+    const h = nameHash(name)
+    return {
+      hasWaterTower:  (h % 4) === 0,
+      hasAntenna:     (h % 2) === 0,
+      hasRoofGarden:  (h % 5) === 0,
+      hasSatellite:   (h % 7) === 0,
+      // Antenna position + height
+      antennaX:       ((h >> 4) % 3 - 1) * w * 0.26,
+      antennaH:       0.72 + ((h >> 6) % 4) * 0.22,
+      // Water tower side (+x or −x half of roof)
+      waterTowerSide: (h & 1) ? 1 : -1,
+      // Garden colour index (0–2)
+      gardenMatIdx:   (h >> 3) % 3,
+    }
+  }, [name, w])
+
+  const bodyMat   = useMemo(() => new THREE.MeshLambertMaterial({ color: style.body }), [style.body])
+  const roofMat   = useMemo(() => new THREE.MeshLambertMaterial({
+    color: style.roof,
+    emissive: new THREE.Color(style.roof),
+    emissiveIntensity: 0,
+  }), [style.roof])
   const accentMat = useMemo(() => new THREE.MeshLambertMaterial({ color: style.accent }), [style.accent])
-  const hvacMat = useMemo(() => new THREE.MeshLambertMaterial({ color: '#333028' }), [])
-  const doorMat = useMemo(() => new THREE.MeshLambertMaterial({ color: '#111111' }), [])
+  const hvacMat   = useMemo(() => new THREE.MeshLambertMaterial({ color: '#333028' }), [])
+  const doorMat   = useMemo(() => new THREE.MeshLambertMaterial({ color: '#111111' }), [])
+
+  // Two window panes per building — MeshBasicMaterial has zero lighting overhead.
+  // Color is lerped between dark/bright each frame instead of emissiveIntensity.
+  const windowData = useMemo(() => {
+    const xGap = w >= 3.5 ? w * 0.25 : w * 0.18
+    const yPos  = Math.min(0.9, height * 0.28)
+    return [
+      { mat: new THREE.MeshBasicMaterial({ color: _winDark.clone() }), offset: Math.random() * Math.PI * 2, xOff: -xGap, yPos },
+      { mat: new THREE.MeshBasicMaterial({ color: _winDark.clone() }), offset: Math.random() * Math.PI * 2, xOff:  xGap, yPos },
+    ]
+  }, [height, w])
 
   // Set initial scale to 0 imperatively — keeps React reconciliation from
   // resetting the group back to scale=0 whenever showLabels toggles or any
@@ -111,19 +175,56 @@ export default function Building({ name, ext, size, x, z, showLabel }) {
   useFrame((_, delta) => {
     if (!groupRef.current) return
 
+    // ── Scale-in entrance ────────────────────────────────────────────────────
     if (!animDone.current) {
-      scaleProgress.current = Math.min(1, scaleProgress.current + delta * 2.5)
-      groupRef.current.scale.setScalar(scaleProgress.current)
-      if (scaleProgress.current >= 1) animDone.current = true
+      if (performance.now() >= startAt.current) {
+        scaleProgress.current = Math.min(1, scaleProgress.current + delta * 2.5)
+        groupRef.current.scale.setScalar(scaleProgress.current)
+        if (scaleProgress.current >= 1) animDone.current = true
+      }
+      // Still run window flicker even during entrance so lights come on together
     }
 
+    // ── Hover lift + roof glow ───────────────────────────────────────────────
+    if (animDone.current) {
+      const isHov = hovered.current
+      if (isHov || hoverY.current > 0.001 || roofMat.emissiveIntensity > 0.001) {
+        const lf = Math.min(1, delta * 7)
+        hoverY.current = THREE.MathUtils.lerp(hoverY.current, isHov ? 0.4 : 0, lf)
+        groupRef.current.position.y = SLAB_TOP + hoverY.current
+        roofMat.emissiveIntensity = THREE.MathUtils.lerp(
+          roofMat.emissiveIntensity, isHov ? 0.55 : 0, lf,
+        )
+      }
+    }
+
+    // ── Label pulse ──────────────────────────────────────────────────────────
     if (showLabel && labelRef.current) {
       labelRef.current.fillOpacity = 0.7 + Math.sin(performance.now() / 333) * 0.3
+    }
+
+    // ── Window flicker — throttled to every 2nd frame (imperceptible at 60 fps)
+    frameSkip.current ^= 1
+    if (frameSkip.current === 0) {
+      const t = performance.now() / 1000
+      for (let i = 0; i < windowData.length; i++) {
+        const { mat, offset } = windowData[i]
+        const bright = 0.15 + 0.35 * Math.max(0, Math.sin(t * 0.6 + offset))
+        _winColor.lerpColors(_winDark, _winBright, bright)
+        mat.color.copy(_winColor)
+      }
     }
   })
 
   return (
-    <group ref={groupRef} position={[x, SLAB_TOP, z]} raycast={() => null}>
+    <group
+      ref={groupRef}
+      position={[x, SLAB_TOP, z]}
+      onPointerEnter={() => { hovered.current = true }}
+      onPointerLeave={() => { hovered.current = false }}
+      onClick={e => { e.stopPropagation(); dispatchInspect(name, ext, size) }}
+      style={{ cursor: 'pointer' }}
+    >
 
       {isStepped ? (
         <>
@@ -182,17 +283,97 @@ export default function Building({ name, ext, size, x, z, showLabel }) {
         </>
       )}
 
-      {/* HVAC box on roof (for larger files) */}
+      {/* HVAC box on roof (for larger files) — no shadow: too small to matter */}
       {hasHVAC && (
-        <mesh position={[w * 0.2, roofY + 0.22, d * 0.2]} castShadow material={hvacMat} raycast={() => null}>
+        <mesh position={[w * 0.2, roofY + 0.22, d * 0.2]} material={hvacMat} raycast={() => null}>
           <boxGeometry args={[w * 0.3, 0.35, d * 0.3]} />
         </mesh>
+      )}
+
+      {/* ── Rooftop: water tower (1 in 4 buildings) ── */}
+      {roofDetails.hasWaterTower && (
+        <group position={[roofDetails.waterTowerSide * w * 0.24, roofY, 0]} raycast={() => null}>
+          {/* Four support legs */}
+          {[[-0.15, -0.14], [0.15, -0.14], [-0.15, 0.14], [0.15, 0.14]].map(([lx, lz], li) => (
+            <mesh key={li} position={[lx, 0.24, lz]} material={antennaMat} raycast={() => null}>
+              <boxGeometry args={[0.06, 0.48, 0.06]} />
+            </mesh>
+          ))}
+          {/* Tank body */}
+          <mesh position={[0, 0.57, 0]} material={waterTankMat} raycast={() => null}>
+            <boxGeometry args={[0.46, 0.40, 0.46]} />
+          </mesh>
+          {/* Tank lid */}
+          <mesh position={[0, 0.79, 0]} material={antennaMat} raycast={() => null}>
+            <boxGeometry args={[0.52, 0.07, 0.52]} />
+          </mesh>
+        </group>
+      )}
+
+      {/* ── Rooftop: antenna (1 in 2 buildings) ── */}
+      {roofDetails.hasAntenna && (
+        <group position={[roofDetails.antennaX, roofY, d * 0.14]} raycast={() => null}>
+          {/* Pole */}
+          <mesh position={[0, roofDetails.antennaH / 2, 0]} material={antennaMat} raycast={() => null}>
+            <boxGeometry args={[0.06, roofDetails.antennaH, 0.06]} />
+          </mesh>
+          {/* Tip disc */}
+          <mesh position={[0, roofDetails.antennaH, 0]} material={antennaMat} raycast={() => null}>
+            <boxGeometry args={[0.18, 0.05, 0.18]} />
+          </mesh>
+          {/* Crossbar */}
+          <mesh position={[0, roofDetails.antennaH * 0.64, 0]} material={antennaMat} raycast={() => null}>
+            <boxGeometry args={[0.30, 0.04, 0.04]} />
+          </mesh>
+        </group>
+      )}
+
+      {/* ── Rooftop: garden (1 in 5 buildings) ── */}
+      {roofDetails.hasRoofGarden && (
+        <group position={[w * 0.10, roofY + 0.07, 0]} raycast={() => null}>
+          {/* Soil bed */}
+          <mesh position={[0, 0.06, 0]} material={gardenMats[roofDetails.gardenMatIdx]} raycast={() => null}>
+            <boxGeometry args={[Math.min(w * 0.44, 2.2), 0.12, Math.min(d * 0.44, 2.2)]} />
+          </mesh>
+          {/* Shrubs */}
+          <mesh position={[-0.30, 0.22, 0.12]} material={shrubMatA} raycast={() => null}>
+            <boxGeometry args={[0.22, 0.22, 0.22]} />
+          </mesh>
+          <mesh position={[ 0.28, 0.20, -0.16]} material={shrubMatB} raycast={() => null}>
+            <boxGeometry args={[0.20, 0.20, 0.20]} />
+          </mesh>
+        </group>
+      )}
+
+      {/* ── Rooftop: satellite dish (1 in 7 buildings) ── */}
+      {roofDetails.hasSatellite && (
+        <group position={[-w * 0.22, roofY, d * 0.16]} raycast={() => null}>
+          {/* Mast */}
+          <mesh position={[0, 0.28, 0]} material={antennaMat} raycast={() => null}>
+            <boxGeometry args={[0.07, 0.56, 0.07]} />
+          </mesh>
+          {/* Dish plate — slightly tilted toward sky */}
+          <mesh position={[0, 0.54, 0.09]} rotation={[0.45, 0, 0]} material={antennaMat} raycast={() => null}>
+            <boxGeometry args={[0.40, 0.40, 0.06]} />
+          </mesh>
+          {/* Feed horn */}
+          <mesh position={[0, 0.56, 0.18]} material={accentMat} raycast={() => null}>
+            <boxGeometry args={[0.08, 0.08, 0.07]} />
+          </mesh>
+        </group>
       )}
 
       {/* Door on south face (positive Z = toward camera) */}
       <mesh position={[0, 0.38, d / 2 + 0.04]} material={doorMat} raycast={() => null}>
         <boxGeometry args={[0.5, 0.75, 0.06]} />
       </mesh>
+
+      {/* Ambient window panes — emissive flicker in useFrame */}
+      {windowData.map((wd, i) => (
+        <mesh key={i} position={[wd.xOff, wd.yPos, d / 2 + 0.03]} material={wd.mat} raycast={() => null}>
+          <boxGeometry args={[0.28, 0.32, 0.04]} />
+        </mesh>
+      ))}
 
       {showLabel && (
         <Text
