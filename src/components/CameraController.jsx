@@ -4,8 +4,8 @@ import { usePlayerStore } from '../store/playerStore'
 import * as THREE from 'three'
 
 const ISO_DIST    = 28
-const DEFAULT_ZOOM = 15
-const MIN_ZOOM    = 15
+const DEFAULT_ZOOM = 11
+const MIN_ZOOM    = 11
 const MAX_ZOOM    = 38.5
 const ZOOM_SPEED  = 0.012
 

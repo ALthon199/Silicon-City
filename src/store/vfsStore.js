@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { fetchRepoTree } from '../api/github'
 
 const ROOT = { name: '/', type: 'dir', children: [] }
 
@@ -142,5 +143,13 @@ export const useVfsStore = create((set, get) => ({
       parent.children.push(copy)
       return { tree: { ...state.tree } }
     })
+  },
+
+  // loadRepo — fetch a public GitHub repo and replace the entire VFS tree.
+  // Returns metadata ({ fileCount, dirCount, truncated }) for the caller to display.
+  async loadRepo(owner, repo) {
+    const { tree, fileCount, dirCount, truncated } = await fetchRepoTree(owner, repo)
+    set({ tree, cwd: '/' })
+    return { fileCount, dirCount, truncated }
   },
 }))

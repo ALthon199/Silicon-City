@@ -22,6 +22,9 @@ const HELP_GROUPS = [
     ['help',             'show this help'],
     ['clear',            'clear the terminal'],
   ]],
+  ['GitHub', [
+    ['load <owner/repo>', 'load a public GitHub repo into the city'],
+  ]],
 ]
 
 const HELP_KEYS = [
@@ -53,7 +56,7 @@ const HELP_TEXT = [
 
 // ── All recognised command names (for Tab-completion) ─────────────────────────
 const ALL_CMDS = [
-  'mkdir', 'touch', 'cd', 'rm', 'mv', 'cp', 'cat', 'ls', 'tree', 'pwd', 'help', 'clear',
+  'mkdir', 'touch', 'cd', 'rm', 'mv', 'cp', 'cat', 'ls', 'tree', 'pwd', 'help', 'clear', 'load',
 ]
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -233,14 +236,41 @@ export default function TerminalHUD() {
     setHistory(prev => [...prev, { type: 'output', text }])
   }, [])
 
-  function submit() {
+  async function submit() {
     const trimmed = input.trim()
     if (!trimmed) return
 
     setCmdHistory(prev => [trimmed, ...prev])
     setHistoryIdx(-1)
+    setInput('')
 
-    const echo   = { type: 'input', text: prompt() + trimmed }
+    const echo  = { type: 'input', text: prompt() + trimmed }
+    const parts = trimmed.split(/\s+/)
+    const cmd   = parts[0]?.toLowerCase()
+
+    // ── load <owner/repo> — async GitHub fetch ────────────────────────────────
+    if (cmd === 'load') {
+      const slug = parts[1] ?? ''
+      if (!slug.includes('/')) {
+        setHistory(prev => [...prev, echo, { type: 'output', text: 'Usage: load <owner/repo>  (e.g. load facebook/react)' }])
+        return
+      }
+      const [owner, repo] = slug.split('/')
+      setHistory(prev => [...prev, echo, { type: 'output', text: `Fetching ${owner}/${repo} from GitHub…` }])
+      try {
+        const { fileCount, dirCount, truncated } = await store.loadRepo(owner, repo)
+        const note = truncated ? '  ⚠ tree truncated (repo >100 k files)' : ''
+        setHistory(prev => [
+          ...prev,
+          { type: 'output', text: `Loaded ${owner}/${repo} — ${fileCount} files, ${dirCount} dirs${note}` },
+        ])
+      } catch (err) {
+        setHistory(prev => [...prev, { type: 'output', text: `Error: ${err.message}` }])
+      }
+      return
+    }
+
+    // ── all other commands (synchronous) ─────────────────────────────────────
     const result = parseCommand(trimmed, store)
 
     if (result === '__CLEAR__') {
@@ -250,8 +280,6 @@ export default function TerminalHUD() {
       if (result) lines.push({ type: 'output', text: result })
       setHistory(prev => [...prev, ...lines])
     }
-
-    setInput('')
   }
 
   function onKeyDown(e) {

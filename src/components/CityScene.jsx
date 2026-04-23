@@ -303,15 +303,15 @@ export default function CityScene() {
 
       <ambientLight intensity={0.75} color="#fff8f0" />
       <directionalLight
-        position={[40, 70, 30]}
+        position={[60, 100, 60]}
         intensity={1.8}
         color="#fff5e0"
         castShadow
-        shadow-mapSize={[512, 512]}
-        shadow-camera-left={-50}
-        shadow-camera-right={50}
-        shadow-camera-top={50}
-        shadow-camera-bottom={-50}
+        shadow-mapSize={[1024, 1024]}
+        shadow-camera-left={-90}
+        shadow-camera-right={90}
+        shadow-camera-top={90}
+        shadow-camera-bottom={-90}
         shadow-camera-near={1}
         shadow-camera-far={220}
       />

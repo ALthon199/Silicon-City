@@ -1,10 +1,10 @@
 /**
- * PlotGrid — renders 12 raised concrete building lot slabs using instanced meshes.
+ * PlotGrid — renders 60 raised concrete building lot slabs using instanced meshes.
  *
  * Each lot is an 8×8 platform raised above the asphalt base.
  * Curb strips run along all four edges to give a distinct raised-curb look.
  * The 4 park lots are rendered separately by CityBoundary with green material.
- * Total: 3 draw calls for all 12 lots.
+ * Total: 3 draw calls for all 60 lots.
  */
 import { useMemo } from 'react'
 import { Instances, Instance } from '@react-three/drei'
@@ -53,21 +53,21 @@ export default function PlotGrid({ positions }) {
   return (
     <>
       {/* Slab bases — 1 draw call */}
-      <Instances geometry={slabGeo} material={slabMat} limit={32}>
+      <Instances geometry={slabGeo} material={slabMat} limit={64}>
         {positions.map(({ x, z }, i) => (
           <Instance key={i} position={[x, SLAB_Y, z]} />
         ))}
       </Instances>
 
       {/* E-W curb strips (N/S edges of each slab) — 1 draw call */}
-      <Instances geometry={curbEWGeo} material={curbMat} limit={64}>
+      <Instances geometry={curbEWGeo} material={curbMat} limit={128}>
         {ewCurbs.map(([x, z], i) => (
           <Instance key={i} position={[x, CURB_Y, z]} />
         ))}
       </Instances>
 
       {/* N-S curb strips (E/W edges of each slab) — 1 draw call */}
-      <Instances geometry={curbNSGeo} material={curbMat} limit={64}>
+      <Instances geometry={curbNSGeo} material={curbMat} limit={128}>
         {nsCurbs.map(([x, z], i) => (
           <Instance key={i} position={[x, CURB_Y, z]} />
         ))}

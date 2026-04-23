@@ -82,13 +82,13 @@ function Box({ pos, size, m, shadow }) {
 }
 
 // ── Road centre dashes (InstancedMesh) ───────────────────────────────────────
-// 230 dashes total: 23 dashes × 5 N-S roads + 23 dashes × 5 E-W roads.
+// ~43 dashes × 9 N-S roads + ~43 dashes × 9 E-W roads ≈ 774 total.
 // Geometry is [0.15, 0.04, 1.0] (elongated along Z); E-W dashes rotate 90° around Y.
 // Placed at y=0.17 — just above asphalt top (0.16), no z-fight.
 const DASH_GEO = new THREE.BoxGeometry(0.15, 0.04, 1.0)
-const DASH_STEP  = 2.4   // period = dash (1.0) + gap (1.4)
-const DASH_START = -26.7 // first dash centre along the road axis
-const DASH_END   = 26.8  // stop before this value
+const DASH_STEP  = 2.4    // period = dash (1.0) + gap (1.4)
+const DASH_START = -50.7  // first dash centre along the road axis
+const DASH_END   =  50.8  // stop before this value
 
 function RoadMarkings() {
   const ref = useRef()
@@ -123,7 +123,7 @@ function RoadMarkings() {
   }, [])
 
   return (
-    <instancedMesh ref={ref} args={[DASH_GEO, mat.roadMark, 260]} raycast={noRay} />
+    <instancedMesh ref={ref} args={[DASH_GEO, mat.roadMark, 800]} raycast={noRay} />
   )
 }
 
@@ -170,18 +170,18 @@ function Sidewalks() {
   }, [])
 
   return (
-    <instancedMesh ref={ref} args={[SW_GEO, mat.sidewalk, 70]} raycast={noRay} />
+    <instancedMesh ref={ref} args={[SW_GEO, mat.sidewalk, 260]} raycast={noRay} />
   )
 }
 
 // ── Crosswalk stripes at directory gates (InstancedMesh) ──────────────────────
-// 4 dir gates at z=-30, x ∈ {-21,-9,+9,+21}.
-// Pedestrians cross the outer E-W road (centre z=-27, spans z=-25 to z=-29).
-// 5 stripes per gate, stepping south from z=-26.0 to z=-28.0 in 0.5 increments.
+// 8 dir gates at z=-54, x ∈ {-45,-33,-21,-9,+9,+21,+33,+45}.
+// Pedestrians cross the outer E-W road (centre z=-51, spans z=-49 to z=-53).
+// 5 stripes per gate, stepping south from z=-50.0 to z=-52.0 in 0.5 increments.
 // Stripe: [GATE_OPEN_W, 0.04, 0.2] at y=0.18 (above dashes, below sidewalks).
 const XW_GEO     = new THREE.BoxGeometry(GATE_OPEN_W, 0.04, 0.20)
-const XW_Z_START = -26.0
-const XW_GATE_XS = [-21, -9, 9, 21]
+const XW_Z_START = -50.0
+const XW_GATE_XS = [-45, -33, -21, -9, 9, 21, 33, 45]
 
 function CrosswalkStripes() {
   const ref = useRef()
@@ -203,7 +203,7 @@ function CrosswalkStripes() {
   }, [])
 
   return (
-    <instancedMesh ref={ref} args={[XW_GEO, mat.xwalk, 25]} raycast={noRay} />
+    <instancedMesh ref={ref} args={[XW_GEO, mat.xwalk, 50]} raycast={noRay} />
   )
 }
 
@@ -434,7 +434,7 @@ function CentralFountain() {
 // ── Entrance approach plaza ───────────────────────────────────────────────────
 function EntranceApproach() {
   return (
-    <group position={[0, 0, 27.5]}>
+    <group position={[0, 0, 51.5]}>
       <Box pos={[0, 0.22, 0]} size={[5.8, 0.12, 3.0]} m={mat.plaza} />
       <Box pos={[0, 0.30, 0]} size={[4.0, 0.06, 2.0]} m={mat.plazaAcc} />
     </group>
@@ -457,9 +457,9 @@ function PlazaPlanter({ x, z }) {
 export default function CityBoundary() {
   return (
     <group>
-      {/* ── Asphalt base (60×60, covers entire city floor) ── */}
+      {/* ── Asphalt base (108×108, covers entire city floor) ── */}
       <mesh position={[0, 0.08, 0]} receiveShadow raycast={noRay}>
-        <boxGeometry args={[60, 0.16, 60]} />
+        <boxGeometry args={[108, 0.16, 108]} />
         <primitive object={mat.asphalt} attach="material" />
       </mesh>
 

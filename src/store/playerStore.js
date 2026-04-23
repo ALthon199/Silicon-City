@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 export const SPAWN_X = 0
-export const SPAWN_Z = 26
+export const SPAWN_Z = 50
 
 export const usePlayerStore = create((set) => ({
   x: SPAWN_X,

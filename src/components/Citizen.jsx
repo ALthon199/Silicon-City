@@ -5,7 +5,7 @@ import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 
 import { Color } from "three"
-const ROADS = [-27, -15, 0, 15, 27]
+const ROADS = [-51, -39, -27, -15, 0, 15, 27, 39, 51]
 
 function randomRoad() {
     return ROADS[Math.floor(Math.random() * ROADS.length)]
@@ -22,7 +22,7 @@ export default function Citizen() {
 
     
     useLayoutEffect(() => {
-        citizens.current = Array.from({ length: 25 }, () => 
+        citizens.current = Array.from({ length: 40 }, () => 
         ({
             x: randomRoad(),
             z: randomRoad(),
@@ -47,7 +47,6 @@ export default function Citizen() {
     }, [])
 
     useFrame(() => {
-        console.log('frame running, citizens:', citizens.current.length);
         for (let i = 0; i < citizens.current.length; i++) {
            
             const citizen = citizens.current[i];
@@ -84,11 +83,11 @@ export default function Citizen() {
     return (
         
         <group>
-            <instancedMesh ref={instanceHead} args={[undefined, undefined, 25]}>
+            <instancedMesh ref={instanceHead} args={[undefined, undefined, 40]}>
                 <boxGeometry args={[0.38, 0.38, 0.38]} />
                 <meshStandardMaterial color="white" />
             </instancedMesh>
-            <instancedMesh ref={instanceBody} args={[undefined, undefined, 25]}>
+            <instancedMesh ref={instanceBody} args={[undefined, undefined, 40]}>
                 <boxGeometry args={[0.5, 0.8, 0.5]} />
                 <meshStandardMaterial color="white" />
             </instancedMesh>

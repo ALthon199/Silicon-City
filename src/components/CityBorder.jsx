@@ -6,21 +6,15 @@
  *   2. Panel    — smooth light-warm concrete slab (main wall face)
  *   3. Cap rail — thin dark steel coping strip on top
  *
- * Corner posts mark each of the four city corners and are slightly taller than
- * the wall panels so they read as deliberate punctuation marks.
- *
  * Wall depth (D) = 0.6 units.  Total wall height = 2.44 units.
- * Gate piers are PIER_H = 5.0 — walls intentionally read as low boundary, not
- * fortress; the gate arches are the dominant vertical element.
  *
  * Gap positions (all walls leave clear openings for every gate):
- *   Front edge (z = +30): gap x ∈ [−3, +3]  (entrance gate, FULL_W = 6)
- *   Back edge  (z = −30): gaps at x = −21, −9, +9, +21 each ±3
- *     → five wall segments between / around the four directory gates
- *   Side edges (x = ±30): no gates → continuous run z ∈ [−30, +30]
+ *   Front edge (z = +54): gap x ∈ [−3, +3]  (entrance gate)
+ *   Back edge  (z = −54): gaps at x = ±9,±21,±33,±45 each ±3
+ *     → nine wall segments between / around the eight directory gates
+ *   Side edges (x = ±54): continuous run z ∈ [−54, +54]
  *
- * Front/back walls end at x = ±29.5 (not ±30) so corner posts cap the joint
- * cleanly without Z-fighting the side walls.
+ * Front/back walls end at x = ±53.5 so corner posts cap the joint cleanly.
  */
 import * as THREE from 'three'
 
@@ -54,29 +48,33 @@ const CP_CY  = FH + CP_H + CH / 2
 // lx = length along X-axis (front/back walls), lz = length along Z-axis (sides).
 // Exactly one of lx / lz is non-zero.
 const WALL_SEGS = [
-  // Front edge (z = +30): entrance gate gap at x ∈ [−3, +3]
-  // Segments end at ±29.5 to leave room for corner post
-  { cx: -16.25, cz:  30, lx: 26.5, lz: D   },
-  { cx:  16.25, cz:  30, lx: 26.5, lz: D   },
+  // Front edge (z = +54): entrance gate gap at x ∈ [−3, +3]
+  { cx: -28.25, cz:  54, lx: 50.5, lz: D    },
+  { cx:  28.25, cz:  54, lx: 50.5, lz: D    },
 
-  // Back edge (z = −30): four directory gate gaps
-  { cx: -26.75, cz: -30, lx:  5.5, lz: D   },
-  { cx:  -15.0, cz: -30, lx:  6.0, lz: D   },
-  { cx:    0.0, cz: -30, lx: 12.0, lz: D   },
-  { cx:   15.0, cz: -30, lx:  6.0, lz: D   },
-  { cx:  26.75, cz: -30, lx:  5.5, lz: D   },
+  // Back edge (z = −54): eight directory gate gaps at x = ±9,±21,±33,±45 (each ±3)
+  // Gate spans: [−48,−42], [−36,−30], [−24,−18], [−12,−6], [+6,+12], [+18,+24], [+30,+36], [+42,+48]
+  { cx: -50.75, cz: -54, lx:  5.5, lz: D    },  // −53.5 → −48
+  { cx:  -39.0, cz: -54, lx:  6.0, lz: D    },  // −42   → −36
+  { cx:  -27.0, cz: -54, lx:  6.0, lz: D    },  // −30   → −24
+  { cx:  -15.0, cz: -54, lx:  6.0, lz: D    },  // −18   → −12
+  { cx:    0.0, cz: -54, lx: 12.0, lz: D    },  // −6    → +6  (between inner pair)
+  { cx:   15.0, cz: -54, lx:  6.0, lz: D    },  // +12   → +18
+  { cx:   27.0, cz: -54, lx:  6.0, lz: D    },  // +24   → +30
+  { cx:   39.0, cz: -54, lx:  6.0, lz: D    },  // +36   → +42
+  { cx:  50.75, cz: -54, lx:  5.5, lz: D    },  // +48   → +53.5
 
   // Side edges — full run, no interruptions
-  { cx:  -30, cz: 0, lx: D, lz: 60 },
-  { cx:   30, cz: 0, lx: D, lz: 60 },
+  { cx:  -54, cz: 0, lx: D, lz: 108 },
+  { cx:   54, cz: 0, lx: D, lz: 108 },
 ]
 
 // ── Corner post positions ─────────────────────────────────────────────────────
 const CORNERS = [
-  [-30,  30],
-  [ 30,  30],
-  [-30, -30],
-  [ 30, -30],
+  [-54,  54],
+  [ 54,  54],
+  [-54, -54],
+  [ 54, -54],
 ]
 
 // ── WallSection ───────────────────────────────────────────────────────────────
