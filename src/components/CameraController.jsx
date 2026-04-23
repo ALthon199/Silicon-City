@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { usePlayerStore } from '../store/playerStore'
+import { useVfsStore } from '../store/vfsStore'
 import * as THREE from 'three'
 
 const ISO_DIST    = 28
@@ -22,11 +23,18 @@ export default function CameraController() {
   const { camera } = useThree()
   const zoomRef         = useRef(DEFAULT_ZOOM)
   const wasInTransition = useRef(false)
+  const needsReset      = useRef(false)
 
   // Smooth camera target — start at city centre so the first frame looks
   // into the city, not toward the entrance where the ground edge is visible.
   const smoothX = useRef(0)
   const smoothZ = useRef(0)
+
+  // Snap camera to centre whenever a new repo finishes loading.
+  const loadVersion = useVfsStore(s => s.loadVersion)
+  useEffect(() => {
+    if (loadVersion > 0) needsReset.current = true
+  }, [loadVersion])
 
   useEffect(() => {
     function onWheel(e) {
@@ -41,6 +49,16 @@ export default function CameraController() {
   }, [])
 
   useFrame(() => {
+    // New repo loaded → snap camera and zoom to city centre immediately.
+    if (needsReset.current) {
+      needsReset.current  = false
+      smoothX.current     = 0
+      smoothZ.current     = 0
+      zoomRef.current     = DEFAULT_ZOOM
+      camera.zoom         = DEFAULT_ZOOM
+      camera.updateProjectionMatrix()
+    }
+
     const { x, z, cdTarget, cdZoom } = usePlayerStore.getState()
 
     const inTransition = cdTarget !== null

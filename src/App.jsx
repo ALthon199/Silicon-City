@@ -8,9 +8,11 @@ import './App.css'
 export default function App() {
   const [portalKey, setPortalKey] = useState(0)
   const canvasWrapperRef = useRef(null)
-  const cwd  = useVfsStore(s => s.cwd)
-  const cd   = useVfsStore(s => s.cd)
-  const isFirst = useRef(true)
+  const cwd         = useVfsStore(s => s.cwd)
+  const loadVersion = useVfsStore(s => s.loadVersion)
+  const cd          = useVfsStore(s => s.cd)
+  const isFirst          = useRef(true)
+  const prevLoadVersion  = useRef(loadVersion)
 
   // Clickable breadcrumb segments in the sidebar header
   const parts = cwd === '/' ? [] : cwd.split('/').filter(Boolean)
@@ -19,9 +21,16 @@ export default function App() {
     cd('/' + parts.slice(0, index + 1).join('/'))
   }
 
-  // Portal animation on every cd navigation
+  // Portal animation on cd navigation — but NOT when a repo load resets cwd.
+  // loadRepo sets cwd back to '/' which would mis-fire the scale-down animation.
   useEffect(() => {
     if (isFirst.current) { isFirst.current = false; return }
+
+    // If loadVersion just bumped, this cwd change came from loadRepo — skip animation.
+    if (loadVersion !== prevLoadVersion.current) {
+      prevLoadVersion.current = loadVersion
+      return
+    }
 
     const el = canvasWrapperRef.current
     if (el) {
@@ -37,7 +46,7 @@ export default function App() {
     }
 
     setPortalKey(k => k + 1)
-  }, [cwd])
+  }, [cwd, loadVersion])
 
   return (
     <div className="app-root">

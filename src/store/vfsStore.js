@@ -39,6 +39,9 @@ function randomSize() {
 export const useVfsStore = create((set, get) => ({
   tree: ROOT,
   cwd: '/',
+  // Incremented every time a repo is loaded so components can reset themselves
+  // without relying on cwd changes (which don't fire when already at root).
+  loadVersion: 0,
 
   // Derived helper: returns the live node for the current directory
   getCwdNode() {
@@ -146,10 +149,11 @@ export const useVfsStore = create((set, get) => ({
   },
 
   // loadRepo — fetch a public GitHub repo and replace the entire VFS tree.
-  // Returns metadata ({ fileCount, dirCount, truncated }) for the caller to display.
+  // Always resets to root and bumps loadVersion so all subscribers can hard-reset
+  // their state (camera, builder system, etc.) regardless of prior cwd.
   async loadRepo(owner, repo) {
     const { tree, fileCount, dirCount, truncated } = await fetchRepoTree(owner, repo)
-    set({ tree, cwd: '/' })
+    set(state => ({ tree, cwd: '/', loadVersion: state.loadVersion + 1 }))
     return { fileCount, dirCount, truncated }
   },
 }))

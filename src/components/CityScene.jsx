@@ -34,8 +34,9 @@ function getNodeAtPath(tree, path) {
 }
 
 function City({ showLabels }) {
-  const tree = useVfsStore(s => s.tree)
-  const cwd  = useVfsStore(s => s.cwd)
+  const tree        = useVfsStore(s => s.tree)
+  const cwd         = useVfsStore(s => s.cwd)
+  const loadVersion = useVfsStore(s => s.loadVersion)
 
   // displayedCwd lags behind real cwd — only updates after exit animation completes
   const [displayedCwd, setDisplayedCwd] = useState(() => cwd)
@@ -71,12 +72,12 @@ function City({ showLabels }) {
     const tl = gsap.timeline({ onComplete: finish })
     tl.to(targets, {
       x: 0, y: 0, z: 0,
-      duration: 0.28,
-      stagger: 0.032,
+      duration: 0.16,
+      stagger: 0.012,
       ease: 'back.in(1.4)',
     })
-    // 350 ms pause — city is gone, arch portal is fully zoomed-in, then switch
-    tl.to({}, { duration: 0.35 })
+    // Brief hold — scene is clear, then switch
+    tl.to({}, { duration: 0.12 })
     tweenRef.current = tl
   }, [cwd])
 
@@ -98,12 +99,24 @@ function City({ showLabels }) {
   const [activeDustClouds, setActiveDustClouds] = useState([])
   // Set of "cwd§name" keys currently mid-demolition (building shrinks before VFS rm)
   const [demolishingKeys,  setDemolishingKeys]  = useState(() => new Set())
-  const knownKeys       = useRef(new Map())
-  const firstRender     = useRef(true)
-  const prevBuilderCwd  = useRef(displayedCwd)
+  const knownKeys          = useRef(new Map())
+  const firstRender        = useRef(true)
+  const prevBuilderCwd     = useRef(displayedCwd)
+  const prevLoadVersionRef = useRef(loadVersion)
   // Keys for which we already spawned a pre-demolition DustCloud so the normal
   // removal-detection loop can skip spawning a duplicate.
   const pendingRemovals = useRef(new Set())
+
+  // ── Synchronous load-reset (must happen BEFORE justCreatedKeys useMemo) ──
+  // justCreatedKeys runs during render; a useEffect would fire too late.
+  // Mutating refs in the render body is safe: refs don't cause re-renders and
+  // the check is idempotent (guarded by prevLoadVersionRef).
+  if (prevLoadVersionRef.current !== loadVersion) {
+    prevLoadVersionRef.current = loadVersion
+    firstRender.current        = true
+    knownKeys.current          = new Map()
+    pendingRemovals.current    = new Set()
+  }
 
   // ── Detect newly-created nodes synchronously during render ───────────────
   // knownKeys.current is intentionally stale here (useEffect hasn't run yet),
@@ -111,7 +124,7 @@ function City({ showLabels }) {
   // These buildings get startDelay = BUILDER_TTL so they only appear once the
   // builder and smoke are gone.
   const justCreatedKeys = useMemo(() => {
-    // On first mount all nodes are "existing"; same after a cd switch.
+    // On first mount all nodes are "existing"; same after a cd switch or load.
     if (firstRender.current || prevBuilderCwd.current !== displayedCwd) return new Set()
     const s = new Set()
     for (const { node } of filledFiles) {
@@ -126,6 +139,16 @@ function City({ showLabels }) {
     }
     return s
   }, [filledFiles, filledDirs, displayedCwd])
+
+  // ── Clean up React state after a repo load ───────────────────────────────
+  // Refs are already reset synchronously above; this effect handles the
+  // React state (builders / dust / demolishing) which can't be set mid-render.
+  useEffect(() => {
+    if (loadVersion === 0) return
+    setActiveBuilders([])
+    setActiveDustClouds([])
+    setDemolishingKeys(new Set())
+  }, [loadVersion])
 
   // Listen for the terminal's pre-demolition signal.
   // Starts the DustCloud and the building shrink-animation before VFS removal.

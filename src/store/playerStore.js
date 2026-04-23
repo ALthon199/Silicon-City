@@ -17,6 +17,6 @@ export const usePlayerStore = create((set) => ({
   // cdZoom:   override zoom to a large value so we zoom into the arch
   cdTarget: null,
   cdZoom:   null,
-  setCdTarget: (x, z, zoom = 52) => set({ cdTarget: { x, z }, cdZoom: zoom }),
+  setCdTarget: (x, z, zoom = 22) => set({ cdTarget: { x, z }, cdZoom: zoom }),
   clearCdTarget: ()               => set({ cdTarget: null,      cdZoom: null  }),
 }))

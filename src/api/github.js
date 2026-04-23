@@ -40,10 +40,10 @@ function parseRepoTree(items) {
     const parts      = item.path.split('/')
     const name       = parts[parts.length - 1]
     const ext        = name.includes('.') ? name.split('.').pop().toLowerCase() : ''
-    const parentPath = parts.slice(0, -1).join('')
+    const parentPath = parts.slice(0, -1).join('/')
     const parent     = parentPath === ''
       ? root
-      : (pathMap[parts.slice(0, -1).join('/')] ?? getOrCreateDir(pathMap, root, parts.slice(0, -1).join('/')))
+      : (pathMap[parentPath] ?? getOrCreateDir(pathMap, root, parentPath))
     parent.children.push({ name, type: 'file', ext, size: item.size ?? 1024 })
   }
 
