@@ -13,8 +13,8 @@
    Left sidebar
    ═══════════════════════════════════════════════════════════════ */
 .sidebar {
-  width: 300px;
-  min-width: 300px;
+  width: 360px;
+  min-width: 360px;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -205,8 +205,8 @@
 
 /* ── Terminal section ── */
 .sidebar-terminal-section {
-  height: 260px;
-  min-height: 180px;
+  height: 300px;
+  min-height: 200px;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -216,6 +216,7 @@
 .terminal-output {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 6px 12px 4px;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
@@ -230,9 +231,12 @@
 .terminal-line pre {
   font-family: 'Courier New', Courier, monospace;
   font-size: 11px;
-  white-space: pre-wrap;
-  word-break: break-all;
+  white-space: pre;
+  word-break: normal;
+  overflow-x: auto;
   margin: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.08) transparent;
 }
 
 .terminal-system pre { color: rgba(255, 255, 255, 0.28); }

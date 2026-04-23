@@ -1,63 +1,115 @@
 /**
- * DustCloud — a brief brown-grey dust burst that spawns at a lot position
- * whenever a file or directory is deleted with `rm`.
+ * DustCloud — a multi-layer demolition burst at a lot position.
  *
- * Lifetime: ~1.4 s  (fade in 180 ms → hold → fade out 180 ms)
- * Particles rise upward, spread outward, then fade.
+ * Layers
+ *   DUST  (14 large puffs)  — wide outward billow, slow rise, sandy/brown
+ *   DEBRIS (12 chunks)      — fast outward arcs with gravity, concrete grey
+ *   SMOKE  (10 plumes)      — tall rising column, dark grey
  *
- * Props
- *   x, z  — lot centre position (world units)
+ * Total lifetime: ~2 400 ms
  */
 import { useRef, useMemo, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
-const SLAB_TOP   = 0.36
+const SLAB_TOP  = 0.36
 
-const TOTAL_MS   = 1400
-const FADE_MS    = 180
+const TOTAL_MS  = 2400
+const FADE_MS   = 220
 
-const NDUST      = 10
-const CYCLE      = 0.55   // seconds per particle cycle
-const PUFF_VY    = 1.60   // upward speed (world-units/s)
+// ── Particle counts ──────────────────────────────────────────────────────────
+const N_DUST   = 14
+const N_DEBRIS = 12
+const N_SMOKE  = 10
+const N_TOTAL  = N_DUST + N_DEBRIS + N_SMOKE
 
-const DUST_COLORS = ['#b89858', '#a88040', '#c8a860', '#907040', '#d0b870']
+// ── Per-type palette ─────────────────────────────────────────────────────────
+const DUST_COLORS   = ['#c8a050', '#b08030', '#d4b060', '#a07030', '#ddc070']
+const DEBRIS_COLORS = ['#808080', '#606060', '#9a9a9a', '#505050', '#707070']
+const SMOKE_COLORS  = ['#404040', '#505050', '#383838', '#484848', '#303030']
+
+function rng(min, max) { return min + Math.random() * (max - min) }
 
 export default function DustCloud({ x, z }) {
   const birthMs  = useRef(performance.now())
-  const dustRefs = useRef([])
+  const meshRefs = useRef([])
 
-  // Materials — created once, disposed on unmount
-  const dustMats = useRef(
-    Array.from({ length: NDUST }, (_, i) =>
-      new THREE.MeshBasicMaterial({
-        color: DUST_COLORS[i % DUST_COLORS.length],
+  // One material per particle so each can have independent opacity
+  const mats = useRef(
+    Array.from({ length: N_TOTAL }, (_, i) => {
+      let palette
+      if      (i < N_DUST)             palette = DUST_COLORS
+      else if (i < N_DUST + N_DEBRIS)  palette = DEBRIS_COLORS
+      else                              palette = SMOKE_COLORS
+      return new THREE.MeshBasicMaterial({
+        color:       palette[i % palette.length],
         transparent: true,
-        opacity: 0,
-        depthWrite: false,
+        opacity:     0,
+        depthWrite:  false,
       })
-    )
+    })
   )
 
-  // Per-particle: random outward burst direction + staggered phase
-  const dustData = useMemo(() =>
-    Array.from({ length: NDUST }, (_, i) => {
-      const angle = (i / NDUST) * Math.PI * 2 + (Math.random() - 0.5) * 1.1
-      const speed = 0.7 + Math.random() * 1.4
-      return {
-        dx:     Math.cos(angle) * speed,
-        dz:     Math.sin(angle) * speed,
-        phase0: i / NDUST,
-      }
-    }), [])
+  // Per-particle constants, computed once
+  const data = useMemo(() => {
+    const arr = []
 
-  useEffect(() => () => dustMats.current.forEach(m => m.dispose()), [])
+    // ── DUST puffs — big billowing spheres, wide spread, moderate rise ───────
+    for (let i = 0; i < N_DUST; i++) {
+      const angle = (i / N_DUST) * Math.PI * 2 + rng(-0.6, 0.6)
+      const speed = rng(2.0, 5.0)
+      arr.push({
+        type:    'dust',
+        dx:      Math.cos(angle) * speed,
+        dz:      Math.sin(angle) * speed,
+        vy:      rng(2.5, 5.0),
+        size:    rng(1.0, 2.2),
+        phase0:  i / N_DUST,
+        cycle:   rng(0.55, 0.80),
+      })
+    }
+
+    // ── DEBRIS chunks — fast lateral arcs with gravity ───────────────────────
+    for (let i = 0; i < N_DEBRIS; i++) {
+      const angle = rng(0, Math.PI * 2)
+      const speed = rng(4.5, 9.0)
+      arr.push({
+        type:    'debris',
+        dx:      Math.cos(angle) * speed,
+        dz:      Math.sin(angle) * speed,
+        vy:      rng(4.0, 8.0),     // initial vertical speed
+        gravity: rng(8.0, 14.0),    // downward accel
+        size:    rng(0.25, 0.55),
+        phase0:  i / N_DEBRIS,
+        cycle:   rng(0.45, 0.70),
+      })
+    }
+
+    // ── SMOKE plumes — large, slow-rising, tight column ─────────────────────
+    for (let i = 0; i < N_SMOKE; i++) {
+      const angle = rng(0, Math.PI * 2)
+      const spread = rng(0.3, 1.8)
+      arr.push({
+        type:    'smoke',
+        dx:      Math.cos(angle) * spread,
+        dz:      Math.sin(angle) * spread,
+        vy:      rng(1.5, 3.5),
+        size:    rng(1.4, 2.8),
+        phase0:  i / N_SMOKE,
+        cycle:   rng(0.70, 1.00),
+      })
+    }
+
+    return arr
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => mats.current.forEach(m => m.dispose()), [])
 
   useFrame(() => {
     const elapsed = performance.now() - birthMs.current
     if (elapsed > TOTAL_MS) return
 
-    // Overall envelope
+    // Global fade-in / fade-out envelope
     let env
     if (elapsed < FADE_MS) {
       env = elapsed / FADE_MS
@@ -67,44 +119,61 @@ export default function DustCloud({ x, z }) {
       env = 1
     }
 
-    const t = elapsed / 1000
-    for (let i = 0; i < NDUST; i++) {
-      const mesh = dustRefs.current[i]
+    const t = elapsed / 1000   // seconds
+
+    for (let i = 0; i < N_TOTAL; i++) {
+      const mesh = meshRefs.current[i]
       if (!mesh) continue
 
-      const { dx, dz, phase0 } = dustData[i]
-      const phase = (t / CYCLE + phase0) % 1
-      const life  = phase * CYCLE
+      const d     = data[i]
+      const phase = ((t / d.cycle) + d.phase0) % 1
+      const life  = phase * d.cycle    // seconds into this particle's current cycle
 
-      mesh.position.set(
-        x + dx * life * 0.75,
-        SLAB_TOP + PUFF_VY * life,
-        z + dz * life * 0.75,
-      )
+      let px, py, pz, particleScale, fade
 
-      // Grow then shrink over each cycle
-      const growScale = 0.08 + phase * 0.70
-      mesh.scale.setScalar(growScale)
+      if (d.type === 'debris') {
+        // Ballistic arc: goes up then falls under gravity
+        px = x  + d.dx * life
+        pz = z  + d.dz * life
+        py = SLAB_TOP + d.vy * life - 0.5 * d.gravity * life * life
+        if (py < 0) py = 0
 
-      // Fade in fast, hold, fade out
-      const fade = phase < 0.25
-        ? phase / 0.25
-        : Math.max(0, 1.0 - (phase - 0.25) / 0.75)
+        particleScale = d.size * (0.5 + phase * 0.5)
+        fade = phase < 0.2
+          ? phase / 0.2
+          : Math.max(0, 1 - (phase - 0.2) / 0.8)
 
-      dustMats.current[i].opacity = fade * 0.72 * env
+      } else {
+        // Dust / smoke: simple upward drift + outward spread
+        px = x  + d.dx * life * 0.9
+        pz = z  + d.dz * life * 0.9
+        py = SLAB_TOP + d.vy * life
+
+        particleScale = d.size * (0.12 + phase * 1.1)
+        fade = phase < 0.20
+          ? phase / 0.20
+          : Math.max(0, 1 - (phase - 0.20) / 0.80)
+      }
+
+      mesh.position.set(px, py, pz)
+      mesh.scale.setScalar(Math.max(0, 3*particleScale))
+      mats.current[i].opacity = fade * 0.78 * env
     }
   })
 
   return (
     <>
-      {dustMats.current.map((mat, i) => (
+      {mats.current.map((mat, i) => (
         <mesh
           key={i}
-          ref={el => { dustRefs.current[i] = el }}
+          ref={el => { meshRefs.current[i] = el }}
           material={mat}
           scale={0}
         >
-          <sphereGeometry args={[0.5, 5, 5]} />
+          {data[i]?.type === 'debris'
+            ? <boxGeometry    args={[0.5, 0.5, 0.5]} />
+            : <sphereGeometry args={[0.5, 6, 6]} />
+          }
         </mesh>
       ))}
     </>

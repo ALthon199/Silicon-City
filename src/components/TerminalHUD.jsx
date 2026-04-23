@@ -2,20 +2,54 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useVfsStore } from '../store/vfsStore'
 
 // ── Help text ─────────────────────────────────────────────────────────────────
-const HELP_TEXT = `Available commands:
-  mkdir <name>        — create a directory
-  touch <name> [n]    — create a file  (n = size in bytes)
-  cd <name|..>        — enter a directory or go up
-  rm <name>           — remove a file or directory
-  mv <src> <dest>     — rename a file or directory
-  cp <src> <dest>     — copy a file (empty copy for dirs)
-  cat <name>          — show file info
-  ls                  — list current directory
-  tree                — print directory tree
-  pwd                 — print working directory
-  help                — show this message
-  clear               — clear terminal output
-  Tab                 — autocomplete command / filename`
+// Groups: [label, [[signature, description], ...]]
+const HELP_GROUPS = [
+  ['Filesystem', [
+    ['mkdir <name>',     'create a directory'],
+    ['touch <name> [n]', 'create a file  (n = size bytes)'],
+    ['rm <name>',        'delete a file or directory'],
+    ['mv <src> <dest>',  'rename a file or directory'],
+    ['cp <src> <dest>',  'copy a file or directory'],
+  ]],
+  ['Navigation', [
+    ['cd <name|..>',     'enter a directory or go up'],
+    ['ls',               'list current directory'],
+    ['tree',             'show full directory tree'],
+    ['pwd',              'print working directory'],
+    ['cat <name>',       'show file metadata'],
+  ]],
+  ['Terminal', [
+    ['help',             'show this help'],
+    ['clear',            'clear the terminal'],
+  ]],
+]
+
+const HELP_KEYS = [
+  ['Tab',   'autocomplete command or filename'],
+  ['↑ / ↓', 'cycle through command history'],
+]
+
+// Auto-compute column width from longest signature across all groups
+const _allSigs = HELP_GROUPS.flatMap(([, cmds]) => cmds.map(([s]) => s))
+const _sigW    = Math.max(..._allSigs.map(s => s.length))
+const _keyW    = Math.max(...HELP_KEYS.map(([s]) => s.length))
+const _W       = _sigW + 8 + 26   // indent(2) + sig + gap(4) + avg desc
+
+const HELP_TEXT = [
+  '─'.repeat(_W),
+  '  Silicon City  ─  commands',
+  '─'.repeat(_W),
+  ...HELP_GROUPS.flatMap(([label, cmds]) => [
+    '',
+    `  ${label}`,
+    ...cmds.map(([sig, desc]) => `    ${sig.padEnd(_sigW)}  ${desc}`),
+  ]),
+  '',
+  '─'.repeat(_W),
+  '  Keyboard',
+  ...HELP_KEYS.map(([key, desc]) => `    ${key.padEnd(_keyW)}  ${desc}`),
+  '─'.repeat(_W),
+].join('\n')
 
 // ── All recognised command names (for Tab-completion) ─────────────────────────
 const ALL_CMDS = [
@@ -42,14 +76,14 @@ function extLabel(ext) {
 
 // Recursive tree printer → array of strings
 function printTree(node, prefix = '') {
-  const lines = []
+  const lines    = []
   const children = node.children ?? []
   children.forEach((child, i) => {
-    const isLast = i === children.length - 1
-    const branch = isLast ? '└── ' : '├── '
-    const icon   = child.type === 'dir' ? '📁 ' : '📄 '
-    lines.push(prefix + branch + icon + child.name + (child.type === 'dir' ? '/' : ''))
-    if (child.type === 'dir' && child.children?.length) {
+    const isLast  = i === children.length - 1
+    const branch  = isLast ? '└── ' : '├── '
+    const label   = child.type === 'dir' ? child.name + '/' : child.name
+    lines.push(prefix + branch + label)
+    if (child.type === 'dir') {
       lines.push(...printTree(child, prefix + (isLast ? '    ' : '│   ')))
     }
   })
@@ -84,8 +118,13 @@ function parseCommand(input, store) {
     case 'rm': {
       const name = parts[1]
       if (!name) return 'Usage: rm <name>'
-      store.rm(name)
-      return `Removed: ${name}`
+      const exists = store.ls().find(e => e.name === name)
+      if (!exists) return `rm: ${name}: No such file or directory`
+      // Fire pre-demolition event so CityScene starts the animation immediately,
+      // then actually remove from VFS after the dust cloud has been visible for a beat.
+      window.dispatchEvent(new CustomEvent('vfs-pre-remove', { detail: { name } }))
+      setTimeout(() => store.rm(name), 1400)
+      return `Demolishing: ${name}…`
     }
     case 'mv': {
       const [, src, dest] = parts
@@ -119,8 +158,11 @@ function parseCommand(input, store) {
     case 'ls': {
       const entries = store.ls()
       if (entries.length === 0) return '(empty directory)'
+      const maxLen = Math.max(...entries.map(e => e.name.length))
       return entries
-        .map(e => (e.type === 'dir' ? `📁 ${e.name}/` : `📄 ${e.name} (${formatBytes(e.size)})`))
+        .map(e => e.type === 'dir'
+          ? `  ${(e.name + '/').padEnd(maxLen + 2)}  dir`
+          : `  ${e.name.padEnd(maxLen + 1)}  ${formatBytes(e.size)}`)
         .join('\n')
     }
     case 'pwd':

@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useEffect } from 'react'
+import { useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import { Canvas } from '@react-three/fiber'
 import gsap from 'gsap'
 import { useVfsStore } from '../store/vfsStore'
@@ -10,13 +10,15 @@ import Building from './Building'
 import Gate from './Gate'
 import EntranceGate from './EntranceGate'
 import CityBoundary from './CityBoundary'
+import CityBorder   from './CityBorder'
 import Player from './Player'
 import CameraController from './CameraController'
 import Builder    from './Builder'
 import DustCloud  from './DustCloud'
+import Citizen from './Citizen'
 
 const BUILDER_TTL = 4400  // ms lifespan — must match Builder.jsx TOTAL_MS
-const DUST_TTL    = 1400  // ms — must match DustCloud.jsx TOTAL_MS
+const DUST_TTL    = 2400  // ms — must match DustCloud.jsx TOTAL_MS
 
 function getNodeAtPath(tree, path) {
   if (path === '/') return tree
@@ -94,9 +96,14 @@ function City({ showLabels }) {
   // so we can detect both additions (→ Builder) and removals (→ DustCloud).
   const [activeBuilders,   setActiveBuilders]   = useState([])
   const [activeDustClouds, setActiveDustClouds] = useState([])
-  const knownKeys      = useRef(new Map())
-  const firstRender    = useRef(true)
-  const prevBuilderCwd = useRef(displayedCwd)
+  // Set of "cwd§name" keys currently mid-demolition (building shrinks before VFS rm)
+  const [demolishingKeys,  setDemolishingKeys]  = useState(() => new Set())
+  const knownKeys       = useRef(new Map())
+  const firstRender     = useRef(true)
+  const prevBuilderCwd  = useRef(displayedCwd)
+  // Keys for which we already spawned a pre-demolition DustCloud so the normal
+  // removal-detection loop can skip spawning a duplicate.
+  const pendingRemovals = useRef(new Set())
 
   // ── Detect newly-created nodes synchronously during render ───────────────
   // knownKeys.current is intentionally stale here (useEffect hasn't run yet),
@@ -119,6 +126,31 @@ function City({ showLabels }) {
     }
     return s
   }, [filledFiles, filledDirs, displayedCwd])
+
+  // Listen for the terminal's pre-demolition signal.
+  // Starts the DustCloud and the building shrink-animation before VFS removal.
+  useEffect(() => {
+    const handler = e => {
+      const { name } = e.detail
+      const key = `${displayedCwd}§${name}`
+      const pos = knownKeys.current.get(key)
+      if (!pos) return
+
+      // Mark as mid-demolition so Building/Gate can start shrinking
+      pendingRemovals.current.add(key)
+      setDemolishingKeys(prev => new Set([...prev, key]))
+
+      // Spawn DustCloud immediately (building still visible)
+      const dustId = `pre-dust-${key}¬${Date.now()}`
+      setActiveDustClouds(prev => [...prev, { id: dustId, ...pos }])
+      setTimeout(
+        () => setActiveDustClouds(prev => prev.filter(p => p.id !== dustId)),
+        DUST_TTL,
+      )
+    }
+    window.addEventListener('vfs-pre-remove', handler)
+    return () => window.removeEventListener('vfs-pre-remove', handler)
+  }, [displayedCwd])
 
   useEffect(() => {
     const sameCwd = prevBuilderCwd.current === displayedCwd
@@ -166,7 +198,13 @@ function City({ showLabels }) {
     const demolitions = []
     for (const [key, pos] of knownKeys.current) {
       if (!next.has(key)) {
-        demolitions.push({ id: `dust-${key}¬${Date.now()}`, ...pos })
+        if (pendingRemovals.current.has(key)) {
+          // DustCloud already started by the pre-remove event — skip duplicate
+          pendingRemovals.current.delete(key)
+          setDemolishingKeys(prev => { const s = new Set(prev); s.delete(key); return s })
+        } else {
+          demolitions.push({ id: `dust-${key}¬${Date.now()}`, ...pos })
+        }
       }
     }
 
@@ -197,13 +235,13 @@ function City({ showLabels }) {
     <group>
       <Ground />
       <CityBoundary />
+      <CityBorder />
       <PlotGrid positions={plotPositions} />
-
+      <Citizen />
       {/* Buildings and gates — grouped so GSAP can tween their scales on exit */}
       <group ref={buildingsGroupRef}>
         {filledFiles.map(({ x, z, node }, i) => {
           const key        = `${displayedCwd}§${node.name}`
-          // Newly-created nodes wait for the builder to finish before appearing
           const startDelay = justCreatedKeys.has(key) ? BUILDER_TTL : i * 45
           return (
             <Building
@@ -215,6 +253,7 @@ function City({ showLabels }) {
               z={z}
               showLabel={showLabels}
               startDelay={startDelay}
+              demolishing={demolishingKeys.has(key)}
             />
           )
         })}
@@ -228,6 +267,7 @@ function City({ showLabels }) {
               x={x}
               z={z}
               startDelay={startDelay}
+              demolishing={demolishingKeys.has(key)}
             />
           )
         })}

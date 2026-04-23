@@ -1,45 +1,49 @@
 /**
- * CityBoundary — city infrastructure and decoration.
+ * CityBoundary — city infrastructure and ground decoration.
  *
- * Single asphalt base (60×60) covers the city interior.
- * Building lot slabs sit on top (rendered by PlotGrid).
- * A grand fountain plaza (8×8) dominates the center.
- * 4 park lots at (±9, ±9) surround the fountain with green space.
- * Mini roundabouts at the 4 inner intersections (±15, ±15).
- * Corner grass patches fill the buffer zone near the perimeter walls.
+ * No perimeter walls: the city fades into the grass ground plane.
+ *
+ * Road markings, sidewalks and boulevard trees are all rendered via
+ * InstancedMesh so the entire road package costs ≤ 7 draw calls.
+ *
+ * Y stacking order (no z-fighting):
+ *   asphalt base top   = 0.16
+ *   road dashes        = 0.17
+ *   crosswalk stripes  = 0.18
+ *   sidewalk strips    = 0.20
+ *   lot slab top       = 0.36   (PlotGrid / park grass)
  *
  * Grid layout (top view):
  *   [B] [B] [B] [B]   ← z=+21
  *   [B] [P] [P] [B]   ← z=+9   P = park lot
- *   [B] [P] [P] [B]   ← z=−9
- *   [B] [B] [B] [B]   ← z=−21
- *   Grand fountain at (0,0) between the 4 park lots.
+ *   [B] [P] [P] [B]   ← z=-9
+ *   [B] [B] [B] [B]   ← z=-21
+ *   Grand fountain at (0,0) between park lots.
  *
- * Back wall gate positions: x = −21, −9, +9, +21
- * Segments between gates: centers −27, −15, 0, +15, +27
+ *   N-S road centres: x = -27, -15, 0, +15, +27
+ *   E-W road centres: z = +27, +15,  0, -15, -27
  */
-import { useRef } from 'react'
+import { useRef, useLayoutEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { CITY_HALF, WALL_H, PARK_LOTS } from '../engine/gridLayout'
+import {
+  PARK_LOTS, FILE_SLOTS,
+  LOT_SIZE, GATE_OPEN_W,
+  NS_ROADS, EW_ROADS,
+} from '../engine/gridLayout'
 
 const _dummy = new THREE.Object3D()
 const TAU    = Math.PI * 2
-
-const H      = CITY_HALF  // 30
 const noRay  = () => null
 
-// Lot slab dimensions — must match PlotGrid.jsx
-const SLAB_Y   = 0.22           // center Y of lot slab
-const SLAB_H   = 0.28           // height of lot slab
-const SLAB_TOP = SLAB_Y + SLAB_H / 2   // = 0.36  (top surface of slab)
+// ── Slab dimensions (must match PlotGrid.jsx) ─────────────────────────────────
+const SLAB_Y   = 0.22
+const SLAB_H   = 0.28
+const SLAB_TOP = SLAB_Y + SLAB_H / 2   // 0.36
 
-// ─── Shared materials ─────────────────────────────────────────────────────────
+// ── Shared materials ──────────────────────────────────────────────────────────
 const mat = {
-  asphalt:   new THREE.MeshLambertMaterial({ color: '#404038' }),
-  stone:     new THREE.MeshLambertMaterial({ color: '#b8aca0' }),
-  tower:     new THREE.MeshLambertMaterial({ color: '#9a8880' }),
-  merlon:    new THREE.MeshLambertMaterial({ color: '#c8b8a8' }),
+  asphalt:   new THREE.MeshLambertMaterial({ color: '#383830' }),
   // Parks & greenery
   grass:     new THREE.MeshLambertMaterial({ color: '#3a8c20' }),
   grassDk:   new THREE.MeshLambertMaterial({ color: '#286014' }),
@@ -60,14 +64,15 @@ const mat = {
   plazaDark: new THREE.MeshLambertMaterial({ color: '#a89880' }),
   waterGlow: new THREE.MeshLambertMaterial({ color: '#50c4f8', emissive: new THREE.Color('#0088cc').multiplyScalar(0.55), transparent: true, opacity: 0.90 }),
   droplet:   new THREE.MeshBasicMaterial({ color: '#88ddff', transparent: true, opacity: 0.82 }),
-  // Street furniture
-  lampPost:  new THREE.MeshLambertMaterial({ color: '#1e1e2a' }),
-  lamp:      new THREE.MeshBasicMaterial({ color: '#fff8c0' }),
-  trunk:     new THREE.MeshLambertMaterial({ color: '#8b6914' }),
+  // Plaza planters
   planter:   new THREE.MeshLambertMaterial({ color: '#a89880' }),
+  // Road markings
+  roadMark:  new THREE.MeshBasicMaterial({ color: '#f4f0e0' }),  // off-white dashes
+  sidewalk:  new THREE.MeshLambertMaterial({ color: '#b8b0a0' }), // concrete
+  xwalk:     new THREE.MeshBasicMaterial({ color: '#e8e4d4' }),   // crosswalk stripe
 }
 
-// ─── Generic box helper ───────────────────────────────────────────────────────
+// ── Generic box helper ────────────────────────────────────────────────────────
 function Box({ pos, size, m, shadow }) {
   return (
     <mesh position={pos} material={m} castShadow={!!shadow} receiveShadow={!!shadow} raycast={noRay}>
@@ -76,45 +81,134 @@ function Box({ pos, size, m, shadow }) {
   )
 }
 
-// ─── Perimeter wall with battlements ─────────────────────────────────────────
-function WallSection({ pos, size }) {
-  const [w, wh, d] = size
-  const isEW = w > d
-  const span = isEW ? w : d
-  const n    = Math.round(span / 2.4)
-  const step = span / n
+// ── Road centre dashes (InstancedMesh) ───────────────────────────────────────
+// 230 dashes total: 23 dashes × 5 N-S roads + 23 dashes × 5 E-W roads.
+// Geometry is [0.15, 0.04, 1.0] (elongated along Z); E-W dashes rotate 90° around Y.
+// Placed at y=0.17 — just above asphalt top (0.16), no z-fight.
+const DASH_GEO = new THREE.BoxGeometry(0.15, 0.04, 1.0)
+const DASH_STEP  = 2.4   // period = dash (1.0) + gap (1.4)
+const DASH_START = -26.7 // first dash centre along the road axis
+const DASH_END   = 26.8  // stop before this value
+
+function RoadMarkings() {
+  const ref = useRef()
+
+  useLayoutEffect(() => {
+    let idx = 0
+    const mesh = ref.current
+    if (!mesh) return
+
+    // N-S roads — dashes run along Z
+    for (const rx of NS_ROADS) {
+      for (let z = DASH_START; z <= DASH_END; z += DASH_STEP) {
+        _dummy.position.set(rx, 0.17, z)
+        _dummy.rotation.set(0, 0, 0)
+        _dummy.scale.setScalar(1)
+        _dummy.updateMatrix()
+        mesh.setMatrixAt(idx++, _dummy.matrix)
+      }
+    }
+    // E-W roads — same geometry rotated 90° → dash runs along X
+    for (const rz of EW_ROADS) {
+      for (let x = DASH_START; x <= DASH_END; x += DASH_STEP) {
+        _dummy.position.set(x, 0.17, rz)
+        _dummy.rotation.set(0, Math.PI / 2, 0)
+        _dummy.scale.setScalar(1)
+        _dummy.updateMatrix()
+        mesh.setMatrixAt(idx++, _dummy.matrix)
+      }
+    }
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.count = idx
+  }, [])
+
   return (
-    <group position={pos}>
-      <Box pos={[0, 0, 0]} size={size} m={mat.stone} shadow />
-      {Array.from({ length: n }).map((_, i) => {
-        if (i % 2 !== 0) return null
-        const off = -span / 2 + step * (i + 0.5)
-        return (
-          <Box
-            key={i}
-            pos={isEW ? [off, wh / 2 + 0.4, 0] : [0, wh / 2 + 0.4, off]}
-            size={isEW ? [step * 0.7, 0.8, d + 0.1] : [w + 0.1, 0.8, step * 0.7]}
-            m={mat.merlon}
-          />
-        )
-      })}
-    </group>
+    <instancedMesh ref={ref} args={[DASH_GEO, mat.roadMark, 260]} raycast={noRay} />
   )
 }
 
-// ─── Corner tower ─────────────────────────────────────────────────────────────
-function CornerTower({ x, z }) {
-  const th = 8.0
+// ── Sidewalk strips (InstancedMesh) ───────────────────────────────────────────
+// One strip per edge of every lot (16 lots × 4 edges = 64 strips).
+// Geometry: [LOT_SIZE, 0.07, 0.5] elongated along X.
+// N/S edges: no rotation. E/W edges: rotate 90° around Y.
+// Placed at y=0.20 (above dashes at 0.17, below lot slab at 0.36).
+// Offset from lot centre = LOT_SIZE/2 + 0.25 = 4.25 units.
+const SW_OFFSET = LOT_SIZE / 2 + 0.25   // = 4.25
+const SW_GEO    = new THREE.BoxGeometry(LOT_SIZE, 0.07, 0.5)
+
+// All lots that need sidewalks
+const ALL_LOTS = [...FILE_SLOTS, ...PARK_LOTS]
+
+function Sidewalks() {
+  const ref = useRef()
+
+  useLayoutEffect(() => {
+    let idx = 0
+    const mesh = ref.current
+    if (!mesh) return
+
+    for (const { x, z } of ALL_LOTS) {
+      // North edge
+      _dummy.position.set(x, 0.20, z + SW_OFFSET)
+      _dummy.rotation.set(0, 0, 0); _dummy.scale.setScalar(1); _dummy.updateMatrix()
+      mesh.setMatrixAt(idx++, _dummy.matrix)
+      // South edge
+      _dummy.position.set(x, 0.20, z - SW_OFFSET)
+      _dummy.updateMatrix()
+      mesh.setMatrixAt(idx++, _dummy.matrix)
+      // East edge (rotate 90° so strip runs N-S along lot edge)
+      _dummy.position.set(x + SW_OFFSET, 0.20, z)
+      _dummy.rotation.set(0, Math.PI / 2, 0); _dummy.updateMatrix()
+      mesh.setMatrixAt(idx++, _dummy.matrix)
+      // West edge
+      _dummy.position.set(x - SW_OFFSET, 0.20, z)
+      _dummy.updateMatrix()
+      mesh.setMatrixAt(idx++, _dummy.matrix)
+    }
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.count = idx
+  }, [])
+
   return (
-    <group position={[x, 0, z]}>
-      <Box pos={[0, th / 2, 0]}    size={[3.2, th, 3.2]}    m={mat.tower} shadow />
-      <Box pos={[0, th + 0.35, 0]} size={[3.6, 0.7, 3.6]}   m={mat.merlon} />
-      <Box pos={[0, th + 1.9, 0]}  size={[0.14, 2.6, 0.14]} m={mat.tower} />
-    </group>
+    <instancedMesh ref={ref} args={[SW_GEO, mat.sidewalk, 70]} raycast={noRay} />
   )
 }
 
-// ─── Park bench ───────────────────────────────────────────────────────────────
+// ── Crosswalk stripes at directory gates (InstancedMesh) ──────────────────────
+// 4 dir gates at z=-30, x ∈ {-21,-9,+9,+21}.
+// Pedestrians cross the outer E-W road (centre z=-27, spans z=-25 to z=-29).
+// 5 stripes per gate, stepping south from z=-26.0 to z=-28.0 in 0.5 increments.
+// Stripe: [GATE_OPEN_W, 0.04, 0.2] at y=0.18 (above dashes, below sidewalks).
+const XW_GEO     = new THREE.BoxGeometry(GATE_OPEN_W, 0.04, 0.20)
+const XW_Z_START = -26.0
+const XW_GATE_XS = [-21, -9, 9, 21]
+
+function CrosswalkStripes() {
+  const ref = useRef()
+
+  useLayoutEffect(() => {
+    let idx = 0
+    const mesh = ref.current
+    if (!mesh) return
+
+    for (const gx of XW_GATE_XS) {
+      for (let i = 0; i < 5; i++) {
+        _dummy.position.set(gx, 0.18, XW_Z_START - i * 0.5)
+        _dummy.rotation.set(0, 0, 0); _dummy.scale.setScalar(1); _dummy.updateMatrix()
+        mesh.setMatrixAt(idx++, _dummy.matrix)
+      }
+    }
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.count = idx
+  }, [])
+
+  return (
+    <instancedMesh ref={ref} args={[XW_GEO, mat.xwalk, 25]} raycast={noRay} />
+  )
+}
+
+
+// ── Park bench ────────────────────────────────────────────────────────────────
 function Bench({ x, z, ry = 0 }) {
   return (
     <group position={[x, 0, z]} rotation={[0, ry, 0]}>
@@ -126,7 +220,7 @@ function Bench({ x, z, ry = 0 }) {
   )
 }
 
-// ─── Flower bed ───────────────────────────────────────────────────────────────
+// ── Flower bed ────────────────────────────────────────────────────────────────
 function Flower({ x, z, color }) {
   const fm = { R: mat.flowerR, Y: mat.flowerY, P: mat.flowerP, W: mat.flowerW }[color] ?? mat.flowerY
   return (
@@ -137,8 +231,7 @@ function Flower({ x, z, color }) {
   )
 }
 
-// ─── Hedge / trimmed shrub ────────────────────────────────────────────────────
-// Positions itself at SLAB_TOP so callers don't need to offset.
+// ── Hedge / trimmed shrub ─────────────────────────────────────────────────────
 function Hedge({ x, z, w, d }) {
   return (
     <group position={[x, SLAB_TOP, z]}>
@@ -148,42 +241,26 @@ function Hedge({ x, z, w, d }) {
   )
 }
 
-// ─── Park lot (permanent green space) ────────────────────────────────────────
-// 8×8 green slab at the same height as building slabs.
-// variant: 0=NW(-9,+9), 1=NE(+9,+9), 2=SW(-9,-9), 3=SE(+9,-9)
+// ── Park lot (permanent green space) ─────────────────────────────────────────
 function ParkLot({ x, z, variant = 0 }) {
-  const benchRy = Math.atan2(x, z)   // face toward city center
-
+  const benchRy = Math.atan2(x, z)   // bench faces city centre
   return (
     <group position={[x, 0, z]}>
-      {/* Green slab — same Y/H as building lot slabs */}
+      {/* Green slab */}
       <mesh position={[0, SLAB_Y, 0]} receiveShadow raycast={noRay}>
         <boxGeometry args={[8, SLAB_H, 8]} />
         <primitive object={mat.grass} attach="material" />
       </mesh>
-
-      {/* Curb strips on all four edges */}
-      <mesh position={[0,  SLAB_TOP + 0.05, -3.75]} raycast={noRay}>
-        <boxGeometry args={[8, 0.10, 0.5]} />
-        <primitive object={mat.curbPark} attach="material" />
-      </mesh>
-      <mesh position={[0,  SLAB_TOP + 0.05,  3.75]} raycast={noRay}>
-        <boxGeometry args={[8, 0.10, 0.5]} />
-        <primitive object={mat.curbPark} attach="material" />
-      </mesh>
-      <mesh position={[-3.75, SLAB_TOP + 0.05, 0]} raycast={noRay}>
-        <boxGeometry args={[0.5, 0.10, 8]} />
-        <primitive object={mat.curbPark} attach="material" />
-      </mesh>
-      <mesh position={[ 3.75, SLAB_TOP + 0.05, 0]} raycast={noRay}>
-        <boxGeometry args={[0.5, 0.10, 8]} />
-        <primitive object={mat.curbPark} attach="material" />
-      </mesh>
-
-      {/* Central hedge — Hedge offsets itself to SLAB_TOP internally */}
+      {/* Curb strips */}
+      {[[0, -3.75, 1], [0, 3.75, 1], [-3.75, 0, 0], [3.75, 0, 0]].map(([cx, cz, axis], i) => (
+        <mesh key={i} position={[cx, SLAB_TOP + 0.05, cz]} raycast={noRay}>
+          <boxGeometry args={axis ? [8, 0.10, 0.5] : [0.5, 0.10, 8]} />
+          <primitive object={mat.curbPark} attach="material" />
+        </mesh>
+      ))}
+      {/* Central hedge */}
       <Hedge x={0} z={0} w={2.2} d={2.2} />
-
-      {/* Bench + flowers lifted to slab top surface */}
+      {/* Bench + flowers on slab surface */}
       <group position={[0, SLAB_TOP, 0]}>
         <Flower
           x={variant < 2 ? 2.2 : -2.2}
@@ -201,41 +278,93 @@ function ParkLot({ x, z, variant = 0 }) {
   )
 }
 
-// ─── Grand central fountain ────────────────────────────────────────────────────
-// 8×8 grand plaza base sits at city center (0, 0).
-// Park lot inner edges are at ±5, fountain plaza edges at ±4 — 1-unit gap, no overlap.
-// Three-basin tower rises ~5.7 units. Crown rotates; water surfaces glow blue.
-const NDROP  = 6
-const DROP_R = 0.72   // orbit radius around spire
-const DROP_Y = 4.60   // base orbit height above fountain floor
+// ── Grand central fountain ────────────────────────────────────────────────────
+//
+// Water jet definitions.  Each jet follows a parabolic arc:
+//   y(phase) = yStart + (yEnd−yStart)*phase + arcH * 4*phase*(1−phase)
+// The 'rise' type jets shoot straight up and fall back (center crown spout).
+//
+// Basin radii used:
+//   Top basin rim    r ≈ 0.40  (square 0.80 → inscribed circle)
+//   Mid basin rim    r ≈ 0.94  (square 1.88 → inscribed circle)
+//   Outer basin rim  r ≈ 1.90  (outer water surface r~2.0, land a bit inside)
+//   Outer basin drop r ≈ 2.15  (spray lands just past rim → realistic splash)
+//
+const WATER_JETS = [
+  // ── Tier-1: 8 jets, top basin rim → mid basin surface ────────────────────
+  ...Array.from({ length: 8 }, (_, i) => ({
+    angle:  i * Math.PI / 4,
+    rStart: 0.40, yStart: 3.92,
+    rEnd:   0.78, yEnd:   2.72,
+    period: 1.35, phase0: i / 8, arcH: 0.55,
+  })),
+  // ── Tier-2: 6 jets, mid basin rim → outer basin surface ──────────────────
+  ...Array.from({ length: 6 }, (_, i) => ({
+    angle:  i * Math.PI / 3,
+    rStart: 0.94, yStart: 2.72,
+    rEnd:   1.90, yEnd:   1.34,
+    period: 1.70, phase0: i / 6, arcH: 0.78,
+  })),
+  // ── Tier-3: 6 short spray jets from outer basin rim ──────────────────────
+  ...Array.from({ length: 6 }, (_, i) => ({
+    angle:  i * Math.PI / 3 + Math.PI / 6,   // 30° offset from tier-2
+    rStart: 1.88, yStart: 1.34,
+    rEnd:   2.18, yEnd:   0.96,
+    period: 1.90, phase0: i / 6, arcH: 0.40,
+  })),
+  // ── Crown: 5 rising jets from central spire tip ───────────────────────────
+  ...Array.from({ length: 5 }, (_, i) => ({
+    angle:  i * Math.PI * 2 / 5,
+    rStart: 0.06, yStart: 5.96,
+    rEnd:   0.06, yEnd:   5.96,   // same XZ — rises and falls vertically
+    period: 1.10, phase0: i / 5, arcH: 0, yPeak: 7.15,
+  })),
+]
+
+const WATER_COUNT = WATER_JETS.length          // = 25
+const WATER_GEO   = new THREE.SphereGeometry(0.35, 6, 6)
 
 function CentralFountain() {
   const crownRef = useRef()
-  const dropsRef = useRef()
+  const waterRef = useRef()
 
   useFrame((_, delta) => {
     const t = performance.now() / 1000
-
     if (crownRef.current) crownRef.current.rotation.y += delta * 0.22
 
-    // Orbit 6 glowing water droplets around the spire
-    if (dropsRef.current) {
-      for (let i = 0; i < NDROP; i++) {
-        const angle = t * 1.1 + (i * TAU) / NDROP
-        const bobY  = Math.sin(t * 2.8 + (i * TAU) / NDROP) * 0.28
-        _dummy.position.set(Math.cos(angle) * DROP_R, DROP_Y + bobY, Math.sin(angle) * DROP_R)
-        _dummy.scale.setScalar(0.6 + 0.4 * Math.abs(Math.sin(t * 1.5 + i)))
+    if (waterRef.current) {
+      for (let i = 0; i < WATER_COUNT; i++) {
+        const jet = WATER_JETS[i]
+        const phase = ((t / jet.period + jet.phase0) % 1)
+
+        const rr = jet.rStart + (jet.rEnd - jet.rStart) * phase
+
+        let yy
+        if (jet.yPeak !== undefined) {
+          // Crown: pure vertical sine arc
+          yy = jet.yStart + (jet.yPeak - jet.yStart) * Math.sin(phase * Math.PI)
+        } else {
+          // Normal parabolic arc
+          yy = jet.yStart + (jet.yEnd - jet.yStart) * phase
+               + jet.arcH * 4 * phase * (1 - phase)
+        }
+
+        const sc = jet.yPeak !== undefined
+          ? 0.30 + 0.70 * Math.sin(phase * Math.PI)   // grow→shrink symmetrically
+          : 0.40 + 0.60 * (1 - phase)                 // big at start, tiny on splash
+
+        _dummy.position.set(Math.cos(jet.angle) * rr, yy, Math.sin(jet.angle) * rr)
+        _dummy.scale.setScalar(sc)
         _dummy.updateMatrix()
-        dropsRef.current.setMatrixAt(i, _dummy.matrix)
+        waterRef.current.setMatrixAt(i, _dummy.matrix)
       }
-      dropsRef.current.instanceMatrix.needsUpdate = true
+      waterRef.current.instanceMatrix.needsUpdate = true
     }
   })
 
   return (
     <group>
-      {/* ── Grand plaza base ──
-           bottom=0.16 (asphalt top), height=0.24, center=0.28, top=0.40 ── */}
+      {/* Grand plaza base */}
       <Box pos={[0, 0.28, 0]} size={[8.0, 0.24, 8.0]} m={mat.plaza} shadow />
       <Box pos={[0, 0.42, 0]} size={[7.2, 0.04, 7.2]} m={mat.plazaAcc} />
       {[[-3.2,-3.2],[3.2,-3.2],[-3.2,3.2],[3.2,3.2]].map(([px,pz]) => (
@@ -243,8 +372,8 @@ function CentralFountain() {
       ))}
       <Box pos={[0, 0.43, 0]} size={[5.4, 0.03, 5.4]} m={mat.plazaDark} />
 
-      {/* ── Outer basin — bottom=0.40 → center=0.90 → top=1.40 ── */}
-      <Box pos={[0, 0.90, 0]} size={[5.0, 1.0, 5.0]} m={mat.stone} shadow />
+      {/* Outer basin */}
+      <Box pos={[0, 0.90, 0]} size={[5.0, 1.0, 5.0]} m={mat.plaza} shadow />
       <Box pos={[0, 1.29, 0]} size={[4.35, 0.06, 4.35]} m={mat.waterGlow} />
       {[0,1,2,3,4,5,6,7].map(i => {
         const a = (i * Math.PI) / 4
@@ -258,11 +387,10 @@ function CentralFountain() {
         )
       })}
 
-      {/* ── Mid pedestal — bottom=1.40 → center=1.70 → top=2.00 ── */}
+      {/* Mid pedestal */}
       <Box pos={[0, 1.70, 0]} size={[2.8, 0.60, 2.8]} m={mat.plazaDark} shadow />
-
-      {/* ── Mid basin — bottom=2.00 → center=2.40 → top=2.80 ── */}
-      <Box pos={[0, 2.40, 0]} size={[2.2, 0.80, 2.2]} m={mat.stone} shadow />
+      {/* Mid basin */}
+      <Box pos={[0, 2.40, 0]} size={[2.2, 0.80, 2.2]} m={mat.plaza} shadow />
       <Box pos={[0, 2.69, 0]} size={[1.88, 0.06, 1.88]} m={mat.waterGlow} />
       {[0,1,2,3].map(i => {
         const a = (i * Math.PI) / 2
@@ -276,56 +404,34 @@ function CentralFountain() {
         )
       })}
 
-      {/* ── Upper pedestal — bottom=2.80 → center=3.10 → top=3.40 ── */}
+      {/* Upper pedestal */}
       <Box pos={[0, 3.10, 0]} size={[1.4, 0.60, 1.4]} m={mat.plazaDark} shadow />
-
-      {/* ── Top basin — bottom=3.40 → center=3.65 → top=3.90 ── */}
-      <Box pos={[0, 3.65, 0]} size={[1.00, 0.50, 1.00]} m={mat.stone} shadow />
+      {/* Top basin */}
+      <Box pos={[0, 3.65, 0]} size={[1.00, 0.50, 1.00]} m={mat.plaza} shadow />
       <Box pos={[0, 3.88, 0]} size={[0.80, 0.05, 0.80]} m={mat.waterGlow} />
 
-      {/* ── Central spire — bottom=3.90 → center=4.70 → top=5.50 ── */}
+      {/* Central spire */}
       <Box pos={[0, 4.70, 0]} size={[0.32, 1.60, 0.32]} m={mat.plazaDark} shadow />
       <Box pos={[0, 5.58, 0]} size={[0.22, 0.22, 0.22]} m={mat.waterGlow} />
 
-      {/* ── Rotating crown ── */}
+      {/* Rotating crown */}
       <group ref={crownRef} position={[0, 5.74, 0]}>
-        <Box pos={[0,  0.00, 0]} size={[0.92, 0.16, 0.92]} m={mat.stone} />
-        <Box pos={[0,  0.24, 0]} size={[0.58, 0.48, 0.58]} m={mat.waterGlow} />
+        <Box pos={[0, 0.00, 0]} size={[0.92, 0.16, 0.92]} m={mat.plaza} />
+        <Box pos={[0, 0.24, 0]} size={[0.58, 0.48, 0.58]} m={mat.waterGlow} />
         <Box pos={[ 0.58, 0.06, 0]} size={[0.38, 0.10, 0.10]} m={mat.plazaAcc} />
         <Box pos={[-0.58, 0.06, 0]} size={[0.38, 0.10, 0.10]} m={mat.plazaAcc} />
         <Box pos={[0, 0.06,  0.58]} size={[0.10, 0.10, 0.38]} m={mat.plazaAcc} />
         <Box pos={[0, 0.06, -0.58]} size={[0.10, 0.10, 0.38]} m={mat.plazaAcc} />
       </group>
 
-      {/* ── Orbiting water droplets ── */}
-      <instancedMesh ref={dropsRef} args={[undefined, undefined, NDROP]} raycast={noRay}>
-        <sphereGeometry args={[0.082, 7, 7]} />
-        <primitive object={mat.droplet} attach="material" />
-      </instancedMesh>
+      {/* Animated water jets (parabolic arcs across all three basin tiers + crown spout) */}
+      <instancedMesh ref={waterRef} args={[WATER_GEO, mat.droplet, WATER_COUNT]} raycast={noRay} />
     </group>
   )
 }
 
-// ─── Mini roundabout / intersection feature ───────────────────────────────────
-// Inner intersections are now at (±15, ±15) — midpoint between inner column (±9)
-// and outer column (±21), i.e. road center between them at ±15.
-function InnerRoundabout({ x, z }) {
-  return (
-    <group position={[x, 0, z]}>
-      {/* Stone circle — bottom at asphalt top (0.16) */}
-      <Box pos={[0, 0.24, 0]} size={[3.0, 0.16, 3.0]} m={mat.plaza} />
-      <Box pos={[0, 0.34, 0]} size={[2.4, 0.04, 2.4]} m={mat.grassDk} />
-      {/* Central topiary */}
-      <Box pos={[0, 0.63, 0]} size={[1.4, 0.56, 1.4]} m={mat.hedge} />
-      <Box pos={[0, 1.03, 0]} size={[1.1, 0.44, 1.1]} m={mat.leaf2} />
-      <Box pos={[0, 1.34, 0]} size={[0.7, 0.36, 0.7]} m={mat.leaf} />
-    </group>
-  )
-}
 
-// ─── Entrance approach ────────────────────────────────────────────────────────
-// Gate wall at z=30, pillars z=29.5→30.5. Slab centered at z=27.5,
-// depth 3.0 → z=26.0 to z=29.0, clear of pillars. Width 5.8 < GATE_SPAN=6.
+// ── Entrance approach plaza ───────────────────────────────────────────────────
 function EntranceApproach() {
   return (
     <group position={[0, 0, 27.5]}>
@@ -335,88 +441,36 @@ function EntranceApproach() {
   )
 }
 
-// ─── Street lamp ──────────────────────────────────────────────────────────────
-// Placed at road intersections throughout the city.
-function StreetLamp({ x, z }) {
-  return (
-    <group position={[x, 0, z]}>
-      {/* Base plinth */}
-      <Box pos={[0, 0.14, 0]} size={[0.28, 0.28, 0.28]} m={mat.lampPost} />
-      {/* Post */}
-      <Box pos={[0, 2.28, 0]} size={[0.12, 4.20, 0.12]} m={mat.lampPost} />
-      {/* Horizontal arm */}
-      <Box pos={[0.46, 4.40, 0]} size={[0.92, 0.10, 0.10]} m={mat.lampPost} />
-      {/* Lamp head housing */}
-      <Box pos={[0.92, 4.28, 0]} size={[0.30, 0.24, 0.30]} m={mat.lampPost} />
-      {/* Lamp glow (MeshBasicMaterial — always bright) */}
-      <Box pos={[0.92, 4.28, 0]} size={[0.20, 0.14, 0.20]} m={mat.lamp} />
-    </group>
-  )
-}
-
-// ─── Road tree ────────────────────────────────────────────────────────────────
-// Layered canopy with tapering silhouette.
-function RoadTree({ x, z }) {
-  return (
-    <group position={[x, 0, z]}>
-      <Box pos={[0, 0.68, 0]} size={[0.26, 1.36, 0.26]} m={mat.trunk} />
-      <Box pos={[0, 1.80, 0]} size={[1.24, 0.72, 1.24]} m={mat.leaf} />
-      <Box pos={[0, 2.34, 0]} size={[0.92, 0.64, 0.92]} m={mat.leaf2} />
-      <Box pos={[0, 2.80, 0]} size={[0.58, 0.52, 0.58]} m={mat.hedge} />
-      <Box pos={[0, 3.12, 0]} size={[0.30, 0.30, 0.30]} m={mat.leaf} />
-    </group>
-  )
-}
-
-// ─── Plaza planter ────────────────────────────────────────────────────────────
-// Small decorative planter box for open road areas near the fountain plaza.
+// ── Plaza planter ─────────────────────────────────────────────────────────────
 function PlazaPlanter({ x, z }) {
   return (
     <group position={[x, 0, z]}>
       <Box pos={[0, 0.26, 0]} size={[0.88, 0.52, 0.88]} m={mat.planter} />
-      <Box pos={[0, 0.54, 0]} size={[0.68, 0.08, 0.68]} m={mat.stone} />
+      <Box pos={[0, 0.54, 0]} size={[0.68, 0.08, 0.68]} m={mat.plaza} />
       <Box pos={[0, 0.64, 0]} size={[0.52, 0.20, 0.52]} m={mat.grassDk} />
       <Box pos={[0, 0.80, 0]} size={[0.28, 0.24, 0.28]} m={mat.leaf2} />
     </group>
   )
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ── Main component ────────────────────────────────────────────────────────────
 export default function CityBoundary() {
-  const wh = WALL_H
-  const wy = wh / 2
-
   return (
     <group>
-      {/* ── Single asphalt base ── */}
+      {/* ── Asphalt base (60×60, covers entire city floor) ── */}
       <mesh position={[0, 0.08, 0]} receiveShadow raycast={noRay}>
         <boxGeometry args={[60, 0.16, 60]} />
         <primitive object={mat.asphalt} attach="material" />
       </mesh>
 
-      {/* ── Perimeter walls ── */}
-      {/* Front wall (z=+H): 2 segments with 6-unit gap at x=0 for entrance gate */}
-      <WallSection pos={[-16.5, wy,  H]} size={[27, wh, 1.0]} />
-      <WallSection pos={[ 16.5, wy,  H]} size={[27, wh, 1.0]} />
-      {/* Side walls: unbroken */}
-      <WallSection pos={[ H, wy, 0]} size={[1.0, wh, H * 2]} />
-      <WallSection pos={[-H, wy, 0]} size={[1.0, wh, H * 2]} />
-      {/* Back wall (z=−H): 5 segments with 6-unit gaps at x=−21,−9,+9,+21
-       *  Gate at x=−21 spans [−24,−18]. Gate at x=−9 spans [−12,−6].
-       *  Gate at x=+9  spans [+6,+12].  Gate at x=+21 spans [+18,+24].
-       *  Segments fill: [−30,−24] [−18,−12] [−6,+6] [+12,+18] [+24,+30]
-       *  Centers: −27 (w=6), −15 (w=6), 0 (w=12), +15 (w=6), +27 (w=6)  */}
-      <WallSection pos={[-27, wy, -H]} size={[ 6, wh, 1.0]} />
-      <WallSection pos={[-15, wy, -H]} size={[ 6, wh, 1.0]} />
-      <WallSection pos={[  0, wy, -H]} size={[12, wh, 1.0]} />
-      <WallSection pos={[ 15, wy, -H]} size={[ 6, wh, 1.0]} />
-      <WallSection pos={[ 27, wy, -H]} size={[ 6, wh, 1.0]} />
+      {/* ── Road centre dashes ── */}
+      <RoadMarkings />
 
-      {/* ── Corner towers ── */}
-      <CornerTower x={-H} z={-H} />
-      <CornerTower x={ H} z={-H} />
-      <CornerTower x={-H} z={ H} />
-      <CornerTower x={ H} z={ H} />
+      {/* ── Sidewalk strips around every lot ── */}
+      <Sidewalks />
+
+      {/* ── Crosswalk stripes at directory gates ── */}
+      <CrosswalkStripes />
 
       {/* ── 4 Park lots ── */}
       {PARK_LOTS.map(({ x, z }, i) => (
@@ -426,37 +480,10 @@ export default function CityBoundary() {
       {/* ── Grand central fountain ── */}
       <CentralFountain />
 
-      {/* ── Mini roundabouts at 4 inner intersections (±15, ±15) ── */}
-      <InnerRoundabout x={-15} z={ 15} />
-      <InnerRoundabout x={ 15} z={ 15} />
-      <InnerRoundabout x={-15} z={-15} />
-      <InnerRoundabout x={ 15} z={-15} />
-
-      {/* ── Entrance approach ── */}
+      {/* ── Entrance approach plaza ── */}
       <EntranceApproach />
 
-      {/* ── Street lamps at outer-road / inner-road intersections ────────── */}
-      {/* Along outer N-S roads (x=±27) crossing inner E-W roads (z=±15) and centre */}
-      <StreetLamp x={ 27} z={ 15} />
-      <StreetLamp x={ 27} z={-15} />
-      <StreetLamp x={-27} z={ 15} />
-      <StreetLamp x={-27} z={-15} />
-      <StreetLamp x={ 27} z={  0} />
-      <StreetLamp x={-27} z={  0} />
-      {/* Along inner N-S roads (x=±15) crossing outer E-W roads (z=±27) */}
-      <StreetLamp x={ 15} z={ 27} />
-      <StreetLamp x={ 15} z={-27} />
-      <StreetLamp x={-15} z={ 27} />
-      <StreetLamp x={-15} z={-27} />
-
-      {/* ── Trees at outer-road corner intersections (x=±27, z=±27) ───────── */}
-      <RoadTree x={ 27} z={ 27} />
-      <RoadTree x={ 27} z={-27} />
-      <RoadTree x={-27} z={ 27} />
-      <RoadTree x={-27} z={-27} />
-
-      {/* ── Plaza planters flanking the fountain on the E-W axis ─────────── */}
-      {/* Positioned in the road gap between fountain plaza (±4) and park lots (±5) */}
+      {/* ── Plaza planters flanking fountain (E-W axis) ── */}
       <PlazaPlanter x={ 4.5} z={0} />
       <PlazaPlanter x={-4.5} z={0} />
       <PlazaPlanter x={0} z={ 4.5} />
