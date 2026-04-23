@@ -1,16 +1,35 @@
-# React + Vite
+# Silicon City — Repository Visualizer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+An interactive 3D city built from your filesystem. Every file becomes a building, every directory a city district. Navigate with terminal commands and explore public GitHub repos.
 
-Currently, two official plugins are available:
+## Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **React + Vite** — frontend framework and build tool
+- **Three.js / React Three Fiber** — 3D rendering
+- **Zustand** — state management for the virtual filesystem
+- **GitHub REST API** — load any public repository into the city
 
-## React Compiler
+## Getting Started
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+npm install
+npm run dev
+```
 
-## Expanding the ESLint configuration
+## Terminal Commands
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+| Command | Description |
+|---|---|
+| `ls` | List files and directories |
+| `cd <dir>` | Enter a directory |
+| `mkdir <name>` | Create a directory |
+| `touch <name>` | Create a file |
+| `rm <name>` | Demolish a building / remove a node |
+| `tree` | Show directory tree |
+| `load <owner/repo>` | Load a public GitHub repo (e.g. `load facebook/react`) |
+| `help` | Show all commands |
+
+## Controls
+
+- **Scroll** — zoom in / out
+- **Arrow keys / WASD** — move the player around the city
